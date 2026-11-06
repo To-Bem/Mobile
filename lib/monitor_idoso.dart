@@ -13,3 +13,8 @@ export 'src/models/evento.dart';
 export 'src/models/idoso.dart';
 export 'src/models/painel_idoso.dart';
 export 'src/models/usuario.dart';
+export 'src/services/alerta_service.dart';
+export 'src/services/api_client.dart';
+export 'src/services/api_exception.dart';
+export 'src/services/auth_service.dart';
+export 'src/services/idoso_service.dart';
