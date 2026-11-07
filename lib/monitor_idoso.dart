@@ -4,8 +4,10 @@
 library;
 
 export 'src/core/config/app_config.dart';
+export 'src/core/ui/entrada.dart';
 export 'src/core/ui/terminal.dart';
 export 'src/core/utils/json_utils.dart';
+export 'src/core/validacao/validadores.dart';
 export 'src/models/alerta.dart';
 export 'src/models/contato.dart';
 export 'src/models/enums.dart';
@@ -18,3 +20,4 @@ export 'src/services/api_client.dart';
 export 'src/services/api_exception.dart';
 export 'src/services/auth_service.dart';
 export 'src/services/idoso_service.dart';
+export 'src/telas/tela_login.dart';

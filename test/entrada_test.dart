@@ -1,0 +1,33 @@
+import 'package:monitor_idoso/monitor_idoso.dart';
+import 'package:test/test.dart';
+
+import 'apoio/entrada_falsa.dart';
+
+void main() {
+  test('pergunta de novo até a resposta ser válida', () {
+    final saida = <String>[];
+    final entrada = entradaFalsa(['', 'ana@', 'ana@email.com'], saida);
+
+    final email = entrada.perguntar('E-mail', validar: validarEmail);
+
+    expect(email, 'ana@email.com');
+    expect(saida.where((linha) => linha == 'E-mail: ').length, 3);
+    expect(saida.where((linha) => linha.contains('[ERRO]')).length, 2);
+  });
+
+  test('remove espaços das pontas, mas não da senha', () {
+    final entrada = entradaFalsa(['  Maria  ', ' 123456 '], []);
+
+    expect(entrada.perguntar('Nome'), 'Maria');
+    expect(entrada.perguntarSenha('Senha'), ' 123456 ');
+  });
+
+  test('sem mais entrada lança EntradaEncerradaException', () {
+    final entrada = entradaFalsa([], []);
+
+    expect(
+      () => entrada.perguntar('Nome'),
+      throwsA(isA<EntradaEncerradaException>()),
+    );
+  });
+}
