@@ -30,4 +30,21 @@ void main() {
       throwsA(isA<EntradaEncerradaException>()),
     );
   });
+
+  test('escolherOpcao mostra o menu e insiste até ser válido', () {
+    final saida = <String>[];
+    final entrada = entradaFalsa(['x', '5', '2'], saida);
+
+    final opcao = entrada.escolherOpcao(['Meus idosos', 'Alertas']);
+
+    expect(opcao, 2);
+    expect(saida, containsAll(['  1) Meus idosos', '  2) Alertas', '  0) Voltar']));
+    expect(saida.where((linha) => linha.contains('[ERRO]')).length, 2);
+  });
+
+  test('pausar espera um Enter', () {
+    final entrada = entradaFalsa([''], []);
+    entrada.pausar();
+    expect(() => entrada.pausar(), throwsA(isA<EntradaEncerradaException>()));
+  });
 }

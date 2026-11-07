@@ -38,4 +38,18 @@ void main() {
       expect(validarSenha(''), 'Senha: preenchimento obrigatório.');
     });
   });
+
+  group('validarOpcao', () {
+    test('aceita de 0 até o máximo', () {
+      expect(validarOpcao('0', 3), isNull);
+      expect(validarOpcao(' 3 ', 3), isNull);
+    });
+
+    test('recusa fora da faixa ou texto', () {
+      expect(validarOpcao('4', 3), 'Digite um número de 0 a 3.');
+      expect(validarOpcao('-1', 3), isNotNull);
+      expect(validarOpcao('um', 3), isNotNull);
+      expect(validarOpcao('', 3), isNotNull);
+    });
+  });
 }

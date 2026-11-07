@@ -28,3 +28,12 @@ String? validarSenha(String? valor) {
   if (valor!.length < 6) return 'A senha precisa ter pelo menos 6 caracteres.';
   return null;
 }
+
+/// Número de menu entre 0 e [maximo].
+String? validarOpcao(String? valor, int maximo) {
+  final numero = int.tryParse(valor?.trim() ?? '');
+  if (numero == null || numero < 0 || numero > maximo) {
+    return 'Digite um número de 0 a $maximo.';
+  }
+  return null;
+}

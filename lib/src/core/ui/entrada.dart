@@ -76,6 +76,26 @@ class Entrada {
     }
   }
 
+  /// Lê um número de menu entre 0 e [maximo].
+  int lerOpcao(int maximo) => int.parse(
+        perguntar('Opção', validar: (valor) => validarOpcao(valor, maximo)),
+      );
+
+  /// Mostra [opcoes] numeradas a partir de 1, mais a opção 0 ([rotuloZero]),
+  /// e devolve o número escolhido.
+  int escolherOpcao(List<String> opcoes, {String rotuloZero = 'Voltar'}) {
+    for (var i = 0; i < opcoes.length; i++) {
+      _escrever('  ${i + 1}) ${opcoes[i]}');
+    }
+    _escrever('  0) $rotuloZero');
+    return lerOpcao(opcoes.length);
+  }
+
+  void pausar() {
+    _escreverPrompt('Pressione Enter para continuar...');
+    if (_lerLinha() == null) throw const EntradaEncerradaException();
+  }
+
   void escrever(String texto) => _escrever(texto);
 
   void mostrarSucesso(String mensagem) =>
