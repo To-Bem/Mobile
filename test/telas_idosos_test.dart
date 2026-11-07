@@ -39,6 +39,7 @@ void main() {
       await TelaListaIdosos(
         titulo: 'Meus idosos',
         idosoService: IdosoService(api),
+        alertaService: AlertaService(api),
         entrada: entrada,
       ).exibir();
 
@@ -55,6 +56,7 @@ void main() {
       await TelaListaIdosos(
         titulo: 'Idosos que acompanho',
         idosoService: IdosoService(api),
+        alertaService: AlertaService(api),
         entrada: entrada,
       ).exibir();
 
@@ -73,6 +75,7 @@ void main() {
       await TelaListaIdosos(
         titulo: 'Meus idosos',
         idosoService: IdosoService(api),
+        alertaService: AlertaService(api),
         entrada: entrada,
       ).exibir();
 
@@ -89,6 +92,7 @@ void main() {
       await TelaDetalheIdoso(
         idosoId: 3,
         idosoService: IdosoService(api),
+        alertaService: AlertaService(api),
         entrada: entrada,
       ).exibir();
 
@@ -112,6 +116,7 @@ void main() {
       await TelaDetalheIdoso(
         idosoId: 1,
         idosoService: IdosoService(api),
+        alertaService: AlertaService(api),
         entrada: entrada,
       ).exibir();
 
@@ -126,6 +131,7 @@ void main() {
       await TelaDetalheIdoso(
         idosoId: 4,
         idosoService: IdosoService(api),
+        alertaService: AlertaService(api),
         entrada: entrada,
       ).exibir();
 
@@ -141,6 +147,7 @@ void main() {
       await TelaMenuPrincipal(
         sessao: sessao,
         idosoService: IdosoService(api),
+        alertaService: AlertaService(api),
         entrada: entrada,
       ).exibir();
 
@@ -148,6 +155,7 @@ void main() {
       expect(mostrou('Você acompanha 3 idosos'), isTrue);
       expect(mostrou('1 idoso precisa de atenção agora.'), isTrue);
       expect(mostrou('1) Meus idosos'), isTrue);
+      expect(mostrou('2) Alertas (3 abertos)'), isTrue);
       expect(mostrou('0) Sair'), isTrue);
     });
 
@@ -158,6 +166,7 @@ void main() {
       await TelaMenuPrincipal(
         sessao: sessao,
         idosoService: IdosoService(api),
+        alertaService: AlertaService(api),
         entrada: entrada,
       ).exibir();
 

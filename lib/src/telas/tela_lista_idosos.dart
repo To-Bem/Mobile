@@ -1,6 +1,7 @@
 import '../core/ui/entrada.dart';
 import '../core/ui/terminal.dart';
 import '../models/idoso.dart';
+import '../services/alerta_service.dart';
 import '../services/api_exception.dart';
 import '../services/idoso_service.dart';
 import 'comum/formatacao.dart';
@@ -12,11 +13,14 @@ class TelaListaIdosos {
   TelaListaIdosos({
     required this.titulo,
     required IdosoService idosoService,
+    required AlertaService alertaService,
     required this.entrada,
-  }) : _idosos = idosoService;
+  })  : _idosos = idosoService,
+        _alertas = alertaService;
 
   final String titulo;
   final IdosoService _idosos;
+  final AlertaService _alertas;
   final Entrada entrada;
 
   Future<void> exibir() async {
@@ -50,6 +54,7 @@ class TelaListaIdosos {
       await TelaDetalheIdoso(
         idosoId: idosos[opcao - 1].id ?? 0,
         idosoService: _idosos,
+        alertaService: _alertas,
         entrada: entrada,
       ).exibir();
     }
@@ -62,13 +67,11 @@ class TelaListaIdosos {
     entrada.escrever(
       '  $numero) ${idoso.nome}$idade  ${etiquetaStatus(idoso.status)}',
     );
-    entrada.escrever(
-      Terminal.colorir(
-        '     Última atividade: ${ultima == null ? 'sem registro' : tempoDesde(ultima)}'
-        ' | Alertas abertos: ${idoso.alertasAbertos}'
-        '${idoso.estaAusente ? ' | Fora de casa' : ''}',
-        Cor.cinza,
-      ),
-    );
+    entrada.escrever(Terminal.colorir(
+      '     Última atividade: ${ultima == null ? 'sem registro' : tempoDesde(ultima)}'
+      ' | Alertas abertos: ${idoso.alertasAbertos}'
+      '${idoso.estaAusente ? ' | Fora de casa' : ''}',
+      Cor.cinza,
+    ));
   }
 }

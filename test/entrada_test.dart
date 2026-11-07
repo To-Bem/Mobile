@@ -47,4 +47,14 @@ void main() {
     entrada.pausar();
     expect(() => entrada.pausar(), throwsA(isA<EntradaEncerradaException>()));
   });
+
+  test('confirmar insiste até receber s ou n', () {
+    final saida = <String>[];
+    final entrada = entradaFalsa(['talvez', 's', 'nao'], saida);
+
+    expect(entrada.confirmar('Confirmar?'), isTrue);
+    expect(entrada.confirmar('Confirmar?'), isFalse);
+    expect(saida, contains('Confirmar? (s/n): '));
+    expect(saida.where((linha) => linha.contains('[ERRO]')).length, 1);
+  });
 }

@@ -52,4 +52,22 @@ void main() {
       expect(validarOpcao('', 3), isNotNull);
     });
   });
+
+  group('validarSimNao', () {
+    test('aceita sim e não em vários formatos', () {
+      for (final resposta in ['s', 'S', 'sim', 'SIM', 'n', 'nao', 'Não']) {
+        expect(validarSimNao(resposta), isNull, reason: resposta);
+      }
+    });
+
+    test('recusa outras respostas', () {
+      expect(validarSimNao('talvez'), 'Responda s (sim) ou n (não).');
+      expect(validarSimNao(''), isNotNull);
+    });
+
+    test('respostaSim', () {
+      expect(respostaSim('Sim'), isTrue);
+      expect(respostaSim('n'), isFalse);
+    });
+  });
 }

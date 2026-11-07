@@ -37,3 +37,15 @@ String? validarOpcao(String? valor, int maximo) {
   }
   return null;
 }
+
+const List<String> _respostasSimNao = ['s', 'sim', 'n', 'nao', 'não'];
+
+/// Aceita s, sim, n, nao ou não (maiúsculas ou minúsculas).
+String? validarSimNao(String? valor) {
+  final texto = (valor ?? '').trim().toLowerCase();
+  if (_respostasSimNao.contains(texto)) return null;
+  return 'Responda s (sim) ou n (não).';
+}
+
+/// true quando a resposta (já validada) é sim.
+bool respostaSim(String valor) => valor.trim().toLowerCase().startsWith('s');

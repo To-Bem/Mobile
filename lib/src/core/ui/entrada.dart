@@ -91,6 +91,10 @@ class Entrada {
     return lerOpcao(opcoes.length);
   }
 
+  /// Pergunta de sim ou não. Devolve true quando a resposta é sim.
+  bool confirmar(String pergunta) =>
+      respostaSim(perguntar('$pergunta (s/n)', validar: validarSimNao));
+
   void pausar() {
     _escreverPrompt('Pressione Enter para continuar...');
     if (_lerLinha() == null) throw const EntradaEncerradaException();

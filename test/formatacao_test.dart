@@ -75,9 +75,52 @@ void main() {
       Idoso(nome: 'Eva', status: StatusIdoso.offline),
     ]);
 
-    expect(
-      ordenados.map((idoso) => idoso.nome),
-      ['Caio', 'Eva', 'Davi', 'Ari', 'Bia'],
-    );
+    expect(ordenados.map((idoso) => idoso.nome), [
+      'Caio',
+      'Eva',
+      'Davi',
+      'Ari',
+      'Bia',
+    ]);
+  });
+
+  group('alertas', () {
+    Alerta alerta(int id, NivelAlerta nivel, StatusAlerta status, int hora) =>
+        Alerta(
+          id: id,
+          idosoId: 1,
+          tipo: 'X',
+          nivel: nivel,
+          status: status,
+          criadoEm: DateTime(2026, 11, 7, hora),
+        );
+
+    test('ordenarAlertas: abertos por gravidade, depois resolvidos', () {
+      final ordenados = ordenarAlertas([
+        alerta(1, NivelAlerta.critico, StatusAlerta.resolvido, 9),
+        alerta(2, NivelAlerta.atencao, StatusAlerta.aberto, 8),
+        alerta(3, NivelAlerta.atencao, StatusAlerta.aberto, 10),
+        alerta(4, NivelAlerta.critico, StatusAlerta.escalonado, 7),
+        alerta(5, NivelAlerta.alerta, StatusAlerta.resolvido, 11),
+      ]);
+
+      expect(ordenados.map((a) => a.id), [4, 3, 2, 5, 1]);
+    });
+
+    test('textos de escalonamento e contagem', () {
+      expect(textoEscalonamento(1), 'familiar avisado');
+      expect(textoEscalonamento(2), '2º contato avisado');
+      expect(textoEscalonamento(3), 'cuidador/agente de saúde avisado');
+      expect(textoAbertos(0), 'nenhum aberto');
+      expect(textoAbertos(1), '1 aberto');
+      expect(textoAbertos(4), '4 abertos');
+    });
+
+    test('tipo desconhecido aparece com o próprio nome', () {
+      expect(
+        tituloDoAlerta(alerta(1, NivelAlerta.alerta, StatusAlerta.aberto, 9)),
+        'X',
+      );
+    });
   });
 }

@@ -1,4 +1,5 @@
 import '../../core/ui/terminal.dart';
+import '../../models/alerta.dart';
 import '../../models/enums.dart';
 import '../../models/idoso.dart';
 
@@ -91,3 +92,70 @@ String formatarTelefone(String telefone) {
 /// 31.5 -> "31,5".
 String formatarDecimal(double valor) =>
     valor.toStringAsFixed(1).replaceAll('.', ',');
+
+// ---------------------------------------------------------------------------
+// Alertas
+// ---------------------------------------------------------------------------
+
+/// Quanto maior, mais grave.
+int gravidadeDoNivel(NivelAlerta nivel) => switch (nivel) {
+      NivelAlerta.critico => 3,
+      NivelAlerta.alerta => 2,
+      NivelAlerta.atencao => 1,
+    };
+
+Cor corDoNivel(NivelAlerta nivel) => switch (nivel) {
+      NivelAlerta.critico => Cor.vermelhoForte,
+      NivelAlerta.alerta => Cor.vermelho,
+      NivelAlerta.atencao => Cor.amarelo,
+    };
+
+String etiquetaNivel(NivelAlerta nivel) {
+  final texto = switch (nivel) {
+    NivelAlerta.critico => 'CRÍTICO',
+    NivelAlerta.alerta => 'ALERTA',
+    NivelAlerta.atencao => 'ATENÇÃO',
+  };
+  return Terminal.etiqueta(texto, corDoNivel(nivel));
+}
+
+/// Tipos de alerta gerados pela API (regras de rotina e procedure PL/SQL).
+const Map<String, String> _tiposDeAlerta = {
+  'PESSOA_PARADA': 'Pessoa parada por muito tempo',
+  'SEM_ATIVIDADE': 'Sem atividade fora da rotina',
+  'BANHEIRO_LONGO': 'Muito tempo no banheiro',
+  'LEVANTADAS_NOTURNAS': 'Levantou muitas vezes à noite',
+  'CALOR': 'Calor perigoso dentro de casa',
+  'DISPOSITIVO_OFFLINE': 'Dispositivo sem sinal',
+  'BOTAO_AJUDA': 'Pediu ajuda pelo botão',
+};
+
+String tituloDoAlerta(Alerta alerta) =>
+    _tiposDeAlerta[alerta.tipo] ?? alerta.tipo;
+
+/// Quem já foi avisado, conforme a etapa do escalonamento.
+String textoEscalonamento(int etapa) => switch (etapa) {
+      <= 1 => 'familiar avisado',
+      2 => '2º contato avisado',
+      _ => 'cuidador/agente de saúde avisado',
+    };
+
+/// Abertos primeiro (do mais grave ao mais leve), depois os resolvidos.
+/// Dentro de cada grupo, do mais recente para o mais antigo.
+List<Alerta> ordenarAlertas(Iterable<Alerta> alertas) => [...alertas]
+  ..sort((a, b) {
+    if (a.estaAberto != b.estaAberto) return a.estaAberto ? -1 : 1;
+    if (a.estaAberto) {
+      final porNivel =
+          gravidadeDoNivel(b.nivel).compareTo(gravidadeDoNivel(a.nivel));
+      if (porNivel != 0) return porNivel;
+    }
+    return b.criadoEm.compareTo(a.criadoEm);
+  });
+
+/// "nenhum aberto", "1 aberto", "3 abertos".
+String textoAbertos(int quantidade) => switch (quantidade) {
+      0 => 'nenhum aberto',
+      1 => '1 aberto',
+      _ => '$quantidade abertos',
+    };

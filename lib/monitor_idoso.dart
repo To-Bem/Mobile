@@ -21,6 +21,7 @@ export 'src/services/api_exception.dart';
 export 'src/services/auth_service.dart';
 export 'src/services/idoso_service.dart';
 export 'src/telas/comum/formatacao.dart';
+export 'src/telas/tela_alertas.dart';
 export 'src/telas/tela_detalhe_idoso.dart';
 export 'src/telas/tela_lista_idosos.dart';
 export 'src/telas/tela_login.dart';

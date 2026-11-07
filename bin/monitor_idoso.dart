@@ -18,6 +18,7 @@ Future<void> main(List<String> argumentos) async {
     await TelaMenuPrincipal(
       sessao: sessao,
       idosoService: IdosoService(api),
+      alertaService: AlertaService(api),
       entrada: entrada,
     ).exibir();
 

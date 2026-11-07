@@ -3,8 +3,11 @@ import '../core/ui/entrada.dart';
 import '../core/ui/terminal.dart';
 import '../models/enums.dart';
 import '../models/usuario.dart';
+import '../services/alerta_service.dart';
 import '../services/api_exception.dart';
 import '../services/idoso_service.dart';
+import 'comum/formatacao.dart';
+import 'tela_alertas.dart';
 import 'tela_lista_idosos.dart';
 
 /// Menu principal. As opções e os textos mudam conforme o papel do usuário.
@@ -12,20 +15,23 @@ class TelaMenuPrincipal {
   TelaMenuPrincipal({
     required this.sessao,
     required IdosoService idosoService,
+    required AlertaService alertaService,
     required this.entrada,
-  }) : _idosos = idosoService;
+  })  : _idosos = idosoService,
+        _alertas = alertaService;
 
   final Sessao sessao;
   final IdosoService _idosos;
+  final AlertaService _alertas;
   final Entrada entrada;
 
   Usuario get _usuario => sessao.usuario;
 
   String get _rotuloIdosos => switch (_usuario.papel) {
-    Papel.familiar => 'Meus idosos',
-    Papel.cuidador => 'Idosos que acompanho',
-    Papel.admin => 'Todos os idosos',
-  };
+        Papel.familiar => 'Meus idosos',
+        Papel.cuidador => 'Idosos que acompanho',
+        Papel.admin => 'Todos os idosos',
+      };
 
   /// Volta quando o usuário escolhe "Sair".
   Future<void> exibir() async {
@@ -33,10 +39,16 @@ class TelaMenuPrincipal {
       entrada.limparTela();
       entrada.escrever(Terminal.cabecalho(AppConfig.nomeApp));
       entrada.escrever('Olá, ${_usuario.nome} (${_usuario.papel.rotulo})');
-      await _mostrarResumo();
+      final abertos = await _mostrarResumo();
       entrada.escrever('');
 
-      final opcao = entrada.escolherOpcao([_rotuloIdosos], rotuloZero: 'Sair');
+      final opcao = entrada.escolherOpcao(
+        [
+          _rotuloIdosos,
+          abertos == null ? 'Alertas' : 'Alertas (${textoAbertos(abertos)})',
+        ],
+        rotuloZero: 'Sair',
+      );
 
       switch (opcao) {
         case 0:
@@ -45,6 +57,12 @@ class TelaMenuPrincipal {
           await TelaListaIdosos(
             titulo: _rotuloIdosos,
             idosoService: _idosos,
+            alertaService: _alertas,
+            entrada: entrada,
+          ).exibir();
+        case 2:
+          await TelaAlertas(
+            alertaService: _alertas,
             entrada: entrada,
           ).exibir();
       }
@@ -52,12 +70,13 @@ class TelaMenuPrincipal {
   }
 
   /// Ex.: "Você acompanha 3 idosos: 1 tudo bem, 1 atenção, 1 crítico."
-  Future<void> _mostrarResumo() async {
+  /// Devolve o total de alertas abertos, ou null se a API falhar.
+  Future<int?> _mostrarResumo() async {
     try {
       final idosos = await _idosos.listar();
       if (idosos.isEmpty) {
         entrada.mostrarAviso('Nenhum idoso vinculado a você ainda.');
-        return;
+        return 0;
       }
 
       final porStatus = idosos.fold<Map<StatusIdoso, int>>(
@@ -75,20 +94,18 @@ class TelaMenuPrincipal {
         'Você acompanha ${idosos.length} $plural: ${partes.join(', ')}.',
       );
 
-      final urgentes =
-          (porStatus[StatusIdoso.critico] ?? 0) +
+      final urgentes = (porStatus[StatusIdoso.critico] ?? 0) +
           (porStatus[StatusIdoso.alerta] ?? 0);
       if (urgentes > 0) {
-        entrada.mostrarAviso(
-          urgentes == 1
-              ? '1 idoso precisa de atenção agora.'
-              : '$urgentes idosos precisam de atenção agora.',
-        );
+        entrada.mostrarAviso(urgentes == 1
+            ? '1 idoso precisa de atenção agora.'
+            : '$urgentes idosos precisam de atenção agora.');
       }
+
+      return idosos.fold<int>(0, (soma, idoso) => soma + idoso.alertasAbertos);
     } on ApiException catch (erro) {
-      entrada.mostrarErro(
-        'Não foi possível carregar o resumo: ${erro.mensagem}',
-      );
+      entrada.mostrarErro('Não foi possível carregar o resumo: ${erro.mensagem}');
+      return null;
     }
   }
 }
