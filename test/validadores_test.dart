@@ -168,4 +168,12 @@ void main() {
       expect(validarOrdemEscalonamento('x'), isNotNull);
     });
   });
+
+  test('validarNumeroEntre', () {
+    expect(validarNumeroEntre('1', 1, 30), isNull);
+    expect(validarNumeroEntre('30', 1, 30), isNull);
+    expect(validarNumeroEntre('0', 1, 30), 'Digite um número de 1 a 30.');
+    expect(validarNumeroEntre('31', 1, 30), isNotNull);
+    expect(validarNumeroEntre('dois', 1, 30), isNotNull);
+  });
 }

@@ -6,10 +6,12 @@ import '../models/usuario.dart';
 import '../services/alerta_service.dart';
 import '../services/api_exception.dart';
 import '../services/idoso_service.dart';
+import '../services/monitor_service.dart';
 import 'comum/formatacao.dart';
 import 'tela_alertas.dart';
 import 'tela_cadastro_idoso.dart';
 import 'tela_lista_idosos.dart';
+import 'tela_monitoramento.dart';
 
 /// Menu principal. As opções e os textos mudam conforme o papel do usuário.
 class TelaMenuPrincipal {
@@ -47,36 +49,45 @@ class TelaMenuPrincipal {
       final abertos = await _mostrarResumo();
       entrada.escrever('');
 
-      final opcao = entrada.escolherOpcao(
-        [
+      // Cada opção é um par (texto, ação). A numeração se ajusta sozinha
+      // quando uma opção não aparece para o papel do usuário.
+      final opcoes = <(String, Future<void> Function())>[
+        (
           _rotuloIdosos,
+          () => TelaListaIdosos(
+                titulo: _rotuloIdosos,
+                idosoService: _idosos,
+                alertaService: _alertas,
+                entrada: entrada,
+              ).exibir(),
+        ),
+        (
           abertos == null ? 'Alertas' : 'Alertas (${textoAbertos(abertos)})',
-          if (_podeCadastrarIdoso) 'Cadastrar idoso',
-        ],
+          () => TelaAlertas(alertaService: _alertas, entrada: entrada).exibir(),
+        ),
+        if (_podeCadastrarIdoso)
+          (
+            'Cadastrar idoso',
+            () => TelaCadastroIdoso(idosoService: _idosos, entrada: entrada)
+                .exibir(),
+          ),
+        (
+          'Monitoramento ao vivo',
+          () => TelaMonitoramento(
+                monitor: MonitorService(_idosos),
+                entrada: entrada,
+              ).exibir(),
+        ),
+      ];
+
+      final opcao = entrada.escolherOpcao(
+        [for (final (rotulo, _) in opcoes) rotulo],
         rotuloZero: 'Sair',
       );
+      if (opcao == 0) return;
 
-      switch (opcao) {
-        case 0:
-          return;
-        case 1:
-          await TelaListaIdosos(
-            titulo: _rotuloIdosos,
-            idosoService: _idosos,
-            alertaService: _alertas,
-            entrada: entrada,
-          ).exibir();
-        case 2:
-          await TelaAlertas(
-            alertaService: _alertas,
-            entrada: entrada,
-          ).exibir();
-        case 3:
-          await TelaCadastroIdoso(
-            idosoService: _idosos,
-            entrada: entrada,
-          ).exibir();
-      }
+      final (_, abrir) = opcoes[opcao - 1];
+      await abrir();
     }
   }
 

@@ -159,3 +159,7 @@ String textoAbertos(int quantidade) => switch (quantidade) {
       1 => '1 aberto',
       _ => '$quantidade abertos',
     };
+
+/// "15:04:09".
+String horaComSegundos(DateTime momento) => '${_doisDigitos(momento.hour)}:'
+    '${_doisDigitos(momento.minute)}:${_doisDigitos(momento.second)}';

@@ -6,6 +6,8 @@
 //
 // Sobe em http://localhost:8080. Não rode junto com a API Java (mesma porta).
 // Os dados ficam só na memória: reiniciar a API falsa volta tudo ao início.
+//
+// Para simular o sensor durante a demonstração, use tool/simular.dart.
 
 import 'dart:convert';
 import 'dart:io';
@@ -51,9 +53,11 @@ class _DadosFalsos {
 
   int _proximoIdoso = 5;
   int _proximoContato = 7;
+  int _proximoAlerta = 6;
 
   int novoIdIdoso() => _proximoIdoso++;
   int novoIdContato() => _proximoContato++;
+  int novoIdAlerta() => _proximoAlerta++;
 
   final List<Map<String, Object?>> contatos = [
     _contato(1, 1, 'Ana Souza', '11999990001', 'Filha', 1, usuarioId: 1),
@@ -136,7 +140,7 @@ class _DadosFalsos {
       tipo: 'PESSOA_PARADA',
       descricao: 'Sem movimento no banheiro há mais de 40 min',
       nivel: 'CRITICO',
-      minutosAtras: 170,
+      criadoEm: _ha(170),
       status: 'ESCALONADO',
       etapaEscalonamento: 2,
     ),
@@ -146,7 +150,7 @@ class _DadosFalsos {
       tipo: 'CALOR',
       descricao: 'Temperatura de 33,5 °C dentro de casa',
       nivel: 'ATENCAO',
-      minutosAtras: 255,
+      criadoEm: _ha(255),
     ),
     _AlertaFalso(
       id: 3,
@@ -154,7 +158,7 @@ class _DadosFalsos {
       tipo: 'SEM_ATIVIDADE',
       descricao: 'Sem movimento há mais de 2 h, fora da rotina',
       nivel: 'ATENCAO',
-      minutosAtras: 10,
+      criadoEm: _ha(10),
     ),
     _AlertaFalso(
       id: 4,
@@ -162,7 +166,7 @@ class _DadosFalsos {
       tipo: 'LEVANTADAS_NOTURNAS',
       descricao: 'Levantou 5 vezes durante a madrugada (média: 2)',
       nivel: 'ALERTA',
-      minutosAtras: 1300,
+      criadoEm: _ha(1300),
       status: 'RESOLVIDO',
       resolvidoEm: _ha(1250),
     ),
@@ -172,7 +176,7 @@ class _DadosFalsos {
       tipo: 'DISPOSITIVO_OFFLINE',
       descricao: 'A lâmpada ficou sem sinal por 35 min',
       nivel: 'ALERTA',
-      minutosAtras: 2900,
+      criadoEm: _ha(2900),
       status: 'RESOLVIDO',
       resolvidoEm: _ha(2850),
     ),
@@ -247,7 +251,7 @@ class _DadosFalsos {
       'nivel': alerta.nivel,
       'status': alerta.status,
       'nivelEscalonamento': alerta.etapaEscalonamento,
-      'criadoEm': _dataJava(_ha(alerta.minutosAtras)),
+      'criadoEm': _dataJava(alerta.criadoEm),
       'resolvidoEm': resolvidoEm == null ? null : _dataJava(resolvidoEm),
       '_links': {
         'self': {'href': '/alertas/${alerta.id}'},
@@ -315,7 +319,7 @@ class _AlertaFalso {
     required this.tipo,
     required this.descricao,
     required this.nivel,
-    required this.minutosAtras,
+    required this.criadoEm,
     this.status = 'ABERTO',
     this.etapaEscalonamento = 1,
     this.resolvidoEm,
@@ -326,7 +330,7 @@ class _AlertaFalso {
   final String tipo;
   final String descricao;
   final String nivel;
-  final int minutosAtras;
+  final DateTime criadoEm;
 
   // Mudam quando o alerta é confirmado.
   String status;
@@ -398,6 +402,9 @@ Future<HttpServer> iniciarApiFalsa({
 final RegExp _rotaPainel = RegExp(r'^GET /idosos/(\d+)/painel$');
 final RegExp _rotaConfirmar = RegExp(r'^PATCH /alertas/(\d+)/confirmar$');
 final RegExp _rotaModo = RegExp(r'^PATCH /idosos/(\d+)/modo$');
+final RegExp _rotaSimulador = RegExp(
+  r'^POST /simulador/(queda|calor|saiu|voltou)/(\d+)$',
+);
 final RegExp _rotaContatos = RegExp(r'^(GET|POST) /idosos/(\d+)/contatos$');
 
 Future<void> _responder(
@@ -416,6 +423,17 @@ Future<void> _responder(
 
     if (rota == 'POST /auth/login') {
       await _login(requisicao, corpo);
+      return;
+    }
+
+    final simulacao = _rotaSimulador.firstMatch(rota);
+    if (simulacao != null) {
+      await _simular(
+        requisicao,
+        dados,
+        simulacao.group(1)!,
+        int.parse(simulacao.group(2)!),
+      );
       return;
     }
 
@@ -527,7 +545,7 @@ Future<void> _listarAlertas(
     final nivel = filtros['nivel'];
     if (nivel != null && alerta.nivel != nivel) return false;
     return true;
-  }).toList()..sort((a, b) => a.minutosAtras.compareTo(b.minutosAtras));
+  }).toList()..sort((a, b) => b.criadoEm.compareTo(a.criadoEm));
 
   return _responderJson(requisicao, 200, {
     '_embedded': {
@@ -676,6 +694,53 @@ Future<void> _cadastrarContato(
   );
   dados.contatos.add(contato);
   return _responderJson(requisicao, 201, contato);
+}
+
+/// POST /simulador/{acao}/{idosoId} — faz o papel do sensor na demonstração.
+/// Não existe na API Java: lá quem gera os alertas é a procedure PL/SQL.
+Future<void> _simular(
+  HttpRequest requisicao,
+  _DadosFalsos dados,
+  String acao,
+  int idosoId,
+) {
+  final idoso = dados.idosoPorId(idosoId);
+  if (idoso == null) {
+    return _erro(requisicao, 404, 'Não existe idoso com id $idosoId.');
+  }
+
+  switch (acao) {
+    case 'queda':
+      dados.alertas.add(
+        _AlertaFalso(
+          id: dados.novoIdAlerta(),
+          idosoId: idosoId,
+          tipo: 'PESSOA_PARADA',
+          descricao: 'Pessoa parada há mais de 40 min (simulado)',
+          nivel: 'CRITICO',
+          criadoEm: DateTime.now(),
+        ),
+      );
+    case 'calor':
+      dados.alertas.add(
+        _AlertaFalso(
+          id: dados.novoIdAlerta(),
+          idosoId: idosoId,
+          tipo: 'CALOR',
+          descricao: 'Temperatura de 34 °C dentro de casa (simulado)',
+          nivel: 'ATENCAO',
+          criadoEm: DateTime.now(),
+        ),
+      );
+    case 'saiu':
+      idoso.modo = 'AUSENTE';
+    case 'voltou':
+      idoso.modo = 'NORMAL';
+  }
+
+  return _responderJson(requisicao, 201, {
+    'mensagem': 'Simulado "$acao" para ${idoso.nome}.',
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -108,6 +108,11 @@ class Entrada {
     if (_lerLinha() == null) throw const EntradaEncerradaException();
   }
 
+  /// Toca o bip do terminal (só no terminal de verdade, nunca nos testes).
+  void bip() {
+    if (_usandoTeclado) _escreverPrompt('\x07');
+  }
+
   void escrever(String texto) => _escrever(texto);
 
   void mostrarSucesso(String mensagem) =>

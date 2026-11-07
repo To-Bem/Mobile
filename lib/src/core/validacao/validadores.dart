@@ -163,3 +163,12 @@ String? validarOrdemEscalonamento(String? valor) {
   }
   return null;
 }
+
+/// Número inteiro entre [minimo] e [maximo].
+String? validarNumeroEntre(String? valor, int minimo, int maximo) {
+  final numero = int.tryParse(valor?.trim() ?? '');
+  if (numero == null || numero < minimo || numero > maximo) {
+    return 'Digite um número de $minimo a $maximo.';
+  }
+  return null;
+}
