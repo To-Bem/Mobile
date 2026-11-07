@@ -1,13 +1,19 @@
 import '../core/ui/entrada.dart';
 import '../core/ui/terminal.dart';
+import '../models/contato.dart';
+import '../models/enums.dart';
+import '../models/idoso.dart';
 import '../models/painel_idoso.dart';
 import '../services/alerta_service.dart';
 import '../services/api_exception.dart';
 import '../services/idoso_service.dart';
+import 'comum/erros_api.dart';
 import 'comum/formatacao.dart';
 import 'tela_alertas.dart';
+import 'tela_cadastro_contato.dart';
 
-/// Detalhe do idoso: status agora, dados de contato, ambiente e linha do tempo.
+/// Detalhe do idoso: status agora, contatos de emergência, ambiente e
+/// linha do tempo. Também liga/desliga o "fora de casa" e cadastra contatos.
 class TelaDetalheIdoso {
   TelaDetalheIdoso({
     required this.idosoId,
@@ -35,24 +41,42 @@ class TelaDetalheIdoso {
         return;
       }
 
+      final idoso = painel.idoso;
       _mostrarPainel(painel);
+      await _mostrarContatos();
+      _mostrarLinhaDoTempo(painel);
       entrada.escrever('');
 
       final opcao = entrada.escolherOpcao([
         'Atualizar',
-        'Ver alertas (${textoAbertos(painel.idoso.alertasAbertos)})',
+        'Ver alertas (${textoAbertos(idoso.alertasAbertos)})',
+        idoso.estaAusente
+            ? 'Marcar que voltou para casa'
+            : 'Marcar como fora de casa',
+        'Cadastrar contato de emergência',
       ]);
-      if (opcao == 0) return;
 
-      if (opcao == 2) {
-        await TelaAlertas(
-          alertaService: _alertas,
-          entrada: entrada,
-          idosoId: idosoId,
-          titulo: 'Alertas de ${painel.idoso.nome}',
-        ).exibir();
+      switch (opcao) {
+        case 0:
+          return;
+        case 2:
+          await TelaAlertas(
+            alertaService: _alertas,
+            entrada: entrada,
+            idosoId: idosoId,
+            titulo: 'Alertas de ${idoso.nome}',
+          ).exibir();
+        case 3:
+          await _alternarModo(idoso);
+        case 4:
+          await TelaCadastroContato(
+            idosoId: idosoId,
+            idosoNome: idoso.nome,
+            idosoService: _idosos,
+            entrada: entrada,
+          ).exibir();
       }
-      // Opção 1 (Atualizar) e a volta dos alertas recarregam o painel.
+      // Depois de qualquer opção (inclusive 1, Atualizar) o painel é recarregado.
     }
   }
 
@@ -96,6 +120,14 @@ class TelaDetalheIdoso {
       }
     }
 
+    if (idoso.estaAusente) {
+      entrada.mostrarAviso(
+        'Fora de casa: alertas de falta de atividade estão pausados.',
+      );
+    }
+  }
+
+  void _mostrarLinhaDoTempo(PainelIdoso painel) {
     entrada.escrever('');
     entrada.escrever(Terminal.colorir('Linha do tempo', Cor.negrito));
     if (painel.eventosHoje.isEmpty) {
@@ -112,5 +144,56 @@ class TelaDetalheIdoso {
         '${evento.descricao}$valor$comodo',
       );
     }
+  }
+
+  Future<void> _mostrarContatos() async {
+    entrada.escrever('');
+    entrada.escrever(
+      Terminal.colorir('Contatos de emergência (ordem de aviso)', Cor.negrito),
+    );
+
+    final List<Contato> contatos;
+    try {
+      contatos = await _idosos.listarContatos(idosoId);
+    } on ApiException catch (erro) {
+      entrada.mostrarErro('Não foi possível carregar os contatos: '
+          '${erro.mensagem}');
+      return;
+    }
+
+    if (contatos.isEmpty) {
+      entrada.mostrarAviso(
+        'Nenhum contato cadastrado. Use a opção 4 para cadastrar.',
+      );
+      return;
+    }
+    for (final contato in contatos) {
+      entrada.escrever(
+        '  ${contato.ordemEscalonamento}º ${contato.nome} '
+        '(${contato.parentesco}) - ${formatarTelefone(contato.telefone)}',
+      );
+    }
+  }
+
+  Future<void> _alternarModo(Idoso idoso) async {
+    final novoModo = idoso.estaAusente ? ModoIdoso.normal : ModoIdoso.ausente;
+    final pergunta = idoso.estaAusente
+        ? 'Confirmar que ${idoso.nome} voltou para casa?'
+        : 'Marcar ${idoso.nome} como fora de casa? Os alertas de falta de '
+            'atividade ficam pausados até a volta.';
+
+    if (!entrada.confirmar(pergunta)) {
+      entrada.mostrarAviso('Nada foi alterado.');
+      entrada.pausar();
+      return;
+    }
+
+    try {
+      final atualizado = await _idosos.alterarModo(idosoId, novoModo);
+      entrada.mostrarSucesso('Pronto! Agora: ${atualizado.modo.rotulo}.');
+    } on ApiException catch (erro) {
+      mostrarErroDaApi(entrada, erro);
+    }
+    entrada.pausar();
   }
 }

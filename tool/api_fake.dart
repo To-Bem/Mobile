@@ -11,7 +11,7 @@ import 'dart:convert';
 import 'dart:io';
 
 // ---------------------------------------------------------------------------
-// Usuários e vínculos (fixos)
+// Usuários (fixos)
 // ---------------------------------------------------------------------------
 
 const List<Map<String, Object>> _usuarios = [
@@ -38,17 +38,32 @@ const List<Map<String, Object>> _usuarios = [
   },
 ];
 
-/// Quais idosos cada usuário acompanha. O ADMIN vê todos.
-const Map<int, List<int>> _vinculos = {
-  1: [1, 2, 3], // Ana (FAMILIAR)
-  2: [3, 4], // Carlos (CUIDADOR)
-};
-
 // ---------------------------------------------------------------------------
 // Dados que mudam durante o uso (um conjunto novo por servidor)
 // ---------------------------------------------------------------------------
 
 class _DadosFalsos {
+  /// Quais idosos cada usuário acompanha. O ADMIN vê todos.
+  final Map<int, List<int>> vinculos = {
+    1: [1, 2, 3], // Ana (FAMILIAR)
+    2: [3, 4], // Carlos (CUIDADOR)
+  };
+
+  int _proximoIdoso = 5;
+  int _proximoContato = 7;
+
+  int novoIdIdoso() => _proximoIdoso++;
+  int novoIdContato() => _proximoContato++;
+
+  final List<Map<String, Object?>> contatos = [
+    _contato(1, 1, 'Ana Souza', '11999990001', 'Filha', 1, usuarioId: 1),
+    _contato(2, 1, 'Rosa Pereira', '11999990002', 'Vizinha', 2),
+    _contato(3, 2, 'Ana Souza', '11999990001', 'Sobrinha', 1, usuarioId: 1),
+    _contato(4, 3, 'Ana Souza', '11999990001', 'Filha', 1, usuarioId: 1),
+    _contato(5, 3, 'Carlos Lima', '11999990003', 'Cuidador', 2, usuarioId: 2),
+    _contato(6, 4, 'Carlos Lima', '11999990003', 'Cuidador', 1, usuarioId: 2),
+  ];
+
   final List<_IdosoFalso> idosos = [
     _IdosoFalso(
       id: 1,
@@ -174,9 +189,11 @@ class _DadosFalsos {
       .where((alerta) => alerta.idosoId == idosoId && alerta.estaAberto)
       .toList();
 
-  /// Status do idoso = nível do pior alerta aberto (ou OK se não houver).
-  String statusDe(int idosoId) {
-    var pior = 'OK';
+  /// Status do idoso = nível do pior alerta aberto.
+  /// Sem alertas: OK, ou OFFLINE se o dispositivo nunca mandou sinal.
+  String statusDe(_IdosoFalso idoso) {
+    final idosoId = idoso.id;
+    var pior = idoso.minutosSemAtividade == null ? 'OFFLINE' : 'OK';
     var gravidadePior = 0;
     for (final alerta in abertosDe(idosoId)) {
       final gravidade = _gravidade[alerta.nivel] ?? 0;
@@ -195,13 +212,17 @@ class _DadosFalsos {
     'telefone': idoso.telefone,
     'endereco': idoso.endereco,
     'modo': idoso.modo,
-    'status': statusDe(idoso.id),
-    'ultimaAtividade': _dataJava(_ha(idoso.minutosSemAtividade)),
+    'status': statusDe(idoso),
+    'ultimaAtividade': idoso.minutosSemAtividade == null
+        ? null
+        : _dataJava(_ha(idoso.minutosSemAtividade!)),
     'alertasAbertos': abertosDe(idoso.id).length,
     '_links': {
       'self': {'href': '/idosos/${idoso.id}'},
       'painel': {'href': '/idosos/${idoso.id}/painel'},
       'alertas': {'href': '/alertas?idosoId=${idoso.id}'},
+      'contatos': {'href': '/idosos/${idoso.id}/contatos'},
+      'modo': {'href': '/idosos/${idoso.id}/modo'},
     },
   };
 
@@ -247,10 +268,10 @@ class _IdosoFalso {
     required this.nascimento,
     required this.telefone,
     required this.endereco,
-    required this.minutosSemAtividade,
-    required this.temperatura,
-    required this.umidade,
-    required this.eventos,
+    this.minutosSemAtividade,
+    this.temperatura,
+    this.umidade,
+    this.eventos = const [],
     this.modo = 'NORMAL',
   });
 
@@ -259,12 +280,14 @@ class _IdosoFalso {
   final String nascimento;
   final String telefone;
   final String endereco;
-  final int minutosSemAtividade;
-  final double temperatura;
-  final int umidade;
+
+  /// null = dispositivo ainda não mandou nenhum sinal (idoso recém-cadastrado).
+  final int? minutosSemAtividade;
+  final double? temperatura;
+  final int? umidade;
   final List<_EventoFalso> eventos;
 
-  /// Muda na camada 08 (chave "fora de casa").
+  /// Muda com a chave "fora de casa".
   String modo;
 }
 
@@ -313,6 +336,24 @@ class _AlertaFalso {
   bool get estaAberto => status != 'RESOLVIDO';
 }
 
+Map<String, Object?> _contato(
+  int id,
+  int idosoId,
+  String nome,
+  String telefone,
+  String parentesco,
+  int ordem, {
+  int? usuarioId,
+}) => {
+  'id': id,
+  'idosoId': idosoId,
+  'usuarioId': usuarioId,
+  'nome': nome,
+  'telefone': telefone,
+  'parentesco': parentesco,
+  'ordemEscalonamento': ordem,
+};
+
 /// Os horários são relativos ao momento da consulta ("há 23 min"),
 /// para a demonstração parecer sempre atual.
 DateTime _ha(int minutos) =>
@@ -356,6 +397,8 @@ Future<HttpServer> iniciarApiFalsa({
 
 final RegExp _rotaPainel = RegExp(r'^GET /idosos/(\d+)/painel$');
 final RegExp _rotaConfirmar = RegExp(r'^PATCH /alertas/(\d+)/confirmar$');
+final RegExp _rotaModo = RegExp(r'^PATCH /idosos/(\d+)/modo$');
+final RegExp _rotaContatos = RegExp(r'^(GET|POST) /idosos/(\d+)/contatos$');
 
 Future<void> _responder(
   HttpRequest requisicao,
@@ -392,6 +435,29 @@ Future<void> _responder(
           'self': {'href': '/idosos'},
         },
       });
+      return;
+    }
+
+    if (rota == 'POST /idosos') {
+      await _cadastrarIdoso(requisicao, dados, usuario, corpo);
+      return;
+    }
+
+    final modo = _rotaModo.firstMatch(rota);
+    if (modo != null) {
+      final idoso = _buscar(visiveis, int.parse(modo.group(1)!));
+      await _alterarModo(requisicao, dados, idoso, corpo);
+      return;
+    }
+
+    final contatos = _rotaContatos.firstMatch(rota);
+    if (contatos != null) {
+      final idoso = _buscar(visiveis, int.parse(contatos.group(2)!));
+      if (contatos.group(1) == 'GET') {
+        await _listarContatos(requisicao, dados, idoso);
+      } else {
+        await _cadastrarContato(requisicao, dados, idoso, corpo);
+      }
       return;
     }
 
@@ -496,9 +562,127 @@ Future<void> _confirmarAlerta(
   return _erro(requisicao, 404, 'Alerta não encontrado.');
 }
 
+/// POST /idosos — o FAMILIAR que cadastra passa a acompanhar o idoso.
+Future<void> _cadastrarIdoso(
+  HttpRequest requisicao,
+  _DadosFalsos dados,
+  Map<String, Object> usuario,
+  Map<String, dynamic> corpo,
+) {
+  if (usuario['papel'] == 'CUIDADOR') {
+    return _erro(requisicao, 403, 'Cuidadores não podem cadastrar idosos.');
+  }
+
+  final nome = _texto(corpo['nome']);
+  final nascimento = DateTime.tryParse(_texto(corpo['dataNascimento']));
+  final telefone = _texto(corpo['telefone']).replaceAll(RegExp(r'\D'), '');
+  final endereco = _texto(corpo['endereco']);
+
+  final campos = <String, String>{
+    if (nome.isEmpty) 'nome': 'obrigatório',
+    if (nascimento == null) 'dataNascimento': 'data inválida (use aaaa-mm-dd)',
+    if (telefone.length < 10 || telefone.length > 11)
+      'telefone': 'use DDD + número',
+    if (endereco.isEmpty) 'endereco': 'obrigatório',
+  };
+  if (campos.isNotEmpty) {
+    return _erro(requisicao, 400, 'Dados inválidos.', campos);
+  }
+
+  final idoso = _IdosoFalso(
+    id: dados.novoIdIdoso(),
+    nome: nome,
+    nascimento: _texto(corpo['dataNascimento']),
+    telefone: telefone,
+    endereco: endereco,
+  );
+  dados.idosos.add(idoso);
+  if (usuario['papel'] == 'FAMILIAR') {
+    (dados.vinculos[usuario['id'] as int] ??= []).add(idoso.id);
+  }
+  return _responderJson(requisicao, 201, dados.idosoJson(idoso));
+}
+
+/// PATCH /idosos/{id}/modo — {"modo": "AUSENTE"} ou {"modo": "NORMAL"}.
+Future<void> _alterarModo(
+  HttpRequest requisicao,
+  _DadosFalsos dados,
+  _IdosoFalso? idoso,
+  Map<String, dynamic> corpo,
+) {
+  if (idoso == null) return _erro(requisicao, 404, 'Idoso não encontrado.');
+
+  final modo = _texto(corpo['modo']);
+  if (modo != 'NORMAL' && modo != 'AUSENTE') {
+    return _erro(requisicao, 400, 'Dados inválidos.', {
+      'modo': 'use NORMAL ou AUSENTE',
+    });
+  }
+  idoso.modo = modo;
+  return _responderJson(requisicao, 200, dados.idosoJson(idoso));
+}
+
+/// GET /idosos/{id}/contatos
+Future<void> _listarContatos(
+  HttpRequest requisicao,
+  _DadosFalsos dados,
+  _IdosoFalso? idoso,
+) {
+  if (idoso == null) return _erro(requisicao, 404, 'Idoso não encontrado.');
+  return _responderJson(requisicao, 200, {
+    '_embedded': {
+      'contatos': [
+        for (final contato in dados.contatos)
+          if (contato['idosoId'] == idoso.id) contato,
+      ],
+    },
+  });
+}
+
+/// POST /idosos/{id}/contatos
+Future<void> _cadastrarContato(
+  HttpRequest requisicao,
+  _DadosFalsos dados,
+  _IdosoFalso? idoso,
+  Map<String, dynamic> corpo,
+) {
+  if (idoso == null) return _erro(requisicao, 404, 'Idoso não encontrado.');
+
+  final nome = _texto(corpo['nome']);
+  final telefone = _texto(corpo['telefone']).replaceAll(RegExp(r'\D'), '');
+  final parentesco = _texto(corpo['parentesco']);
+  final ordem = corpo['ordemEscalonamento'];
+
+  final campos = <String, String>{
+    if (nome.isEmpty) 'nome': 'obrigatório',
+    if (telefone.length < 10 || telefone.length > 11)
+      'telefone': 'use DDD + número',
+    if (parentesco.isEmpty) 'parentesco': 'obrigatório',
+    if (ordem is! int || ordem < 1 || ordem > 5)
+      'ordemEscalonamento': 'use um número de 1 a 5',
+  };
+  if (campos.isNotEmpty) {
+    return _erro(requisicao, 400, 'Dados inválidos.', campos);
+  }
+
+  final contato = _contato(
+    dados.novoIdContato(),
+    idoso.id,
+    nome,
+    telefone,
+    parentesco,
+    ordem as int,
+    usuarioId: corpo['usuarioId'] is int ? corpo['usuarioId'] as int : null,
+  );
+  dados.contatos.add(contato);
+  return _responderJson(requisicao, 201, contato);
+}
+
 // ---------------------------------------------------------------------------
 // Apoio
 // ---------------------------------------------------------------------------
+
+String _texto(Object? valor) => valor is String ? valor.trim() : '';
 
 /// O token falso tem o formato `token-falso-<id do usuário>`.
 Map<String, Object>? _usuarioDoToken(HttpRequest requisicao) {
@@ -519,7 +703,7 @@ List<_IdosoFalso> _idososVisiveis(
   Map<String, Object> usuario,
 ) {
   if (usuario['papel'] == 'ADMIN') return dados.idosos;
-  final ids = _vinculos[usuario['id']] ?? const <int>[];
+  final ids = dados.vinculos[usuario['id']] ?? const <int>[];
   return dados.idosos.where((idoso) => ids.contains(idoso.id)).toList();
 }
 
@@ -540,11 +724,16 @@ Map<String, dynamic> _lerJson(String texto) {
   }
 }
 
-Future<void> _erro(HttpRequest requisicao, int status, String mensagem) =>
-    _responderJson(requisicao, status, {
-      'status': status,
-      'mensagem': mensagem,
-    });
+Future<void> _erro(
+  HttpRequest requisicao,
+  int status,
+  String mensagem, [
+  Map<String, String>? campos,
+]) {
+  final corpo = <String, Object>{'status': status, 'mensagem': mensagem};
+  if (campos != null) corpo['campos'] = campos;
+  return _responderJson(requisicao, status, corpo);
+}
 
 Future<void> _responderJson(
   HttpRequest requisicao,

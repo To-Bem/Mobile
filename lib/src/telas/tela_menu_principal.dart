@@ -8,6 +8,7 @@ import '../services/api_exception.dart';
 import '../services/idoso_service.dart';
 import 'comum/formatacao.dart';
 import 'tela_alertas.dart';
+import 'tela_cadastro_idoso.dart';
 import 'tela_lista_idosos.dart';
 
 /// Menu principal. As opções e os textos mudam conforme o papel do usuário.
@@ -33,6 +34,10 @@ class TelaMenuPrincipal {
         Papel.admin => 'Todos os idosos',
       };
 
+  /// O cuidador acompanha idosos atribuídos a ele; quem cadastra é a família
+  /// (ou o administrador).
+  bool get _podeCadastrarIdoso => _usuario.papel != Papel.cuidador;
+
   /// Volta quando o usuário escolhe "Sair".
   Future<void> exibir() async {
     while (true) {
@@ -46,6 +51,7 @@ class TelaMenuPrincipal {
         [
           _rotuloIdosos,
           abertos == null ? 'Alertas' : 'Alertas (${textoAbertos(abertos)})',
+          if (_podeCadastrarIdoso) 'Cadastrar idoso',
         ],
         rotuloZero: 'Sair',
       );
@@ -63,6 +69,11 @@ class TelaMenuPrincipal {
         case 2:
           await TelaAlertas(
             alertaService: _alertas,
+            entrada: entrada,
+          ).exibir();
+        case 3:
+          await TelaCadastroIdoso(
+            idosoService: _idosos,
             entrada: entrada,
           ).exibir();
       }

@@ -32,6 +32,7 @@ class Entrada {
   final void Function(String texto) _escreverPrompt;
 
   static const Utf8Codec _utf8Tolerante = Utf8Codec(allowMalformed: true);
+  static const String _caractereInvalido = '\uFFFD';
 
   static String? _lerDoTeclado() =>
       stdin.readLineSync(encoding: _utf8Tolerante);
@@ -58,6 +59,13 @@ class Entrada {
       _escreverPrompt('$rotulo: ');
       final resposta = esconder ? _lerEscondido() : _lerLinha();
       if (resposta == null) throw const EntradaEncerradaException();
+
+      // Acento digitado num terminal que não está em UTF-8 chega como '\uFFFD'.
+      if (resposta.contains(_caractereInvalido)) {
+        mostrarErro('O terminal não reconheceu um acento. Rode "chcp 65001" '
+            'antes do "dart run" ou digite sem acento.');
+        continue;
+      }
 
       final valor = aparar ? resposta.trim() : resposta;
       final erro = validar?.call(valor);

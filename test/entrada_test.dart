@@ -57,4 +57,12 @@ void main() {
     expect(saida, contains('Confirmar? (s/n): '));
     expect(saida.where((linha) => linha.contains('[ERRO]')).length, 1);
   });
+
+  test('acento quebrado pelo terminal mostra como resolver', () {
+    final saida = <String>[];
+    final entrada = entradaFalsa(['Jo\uFFFDo', 'Joao'], saida);
+
+    expect(entrada.perguntar('Nome'), 'Joao');
+    expect(saida.any((linha) => linha.contains('chcp 65001')), isTrue);
+  });
 }

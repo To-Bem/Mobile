@@ -37,6 +37,13 @@ class IdosoService {
     return Idoso.fromJson(ApiClient.objetoDaResposta(corpo));
   }
 
+  /// GET /idosos/{id}/contatos — na ordem em que serão avisados.
+  Future<List<Contato>> listarContatos(int idosoId) async {
+    final corpo = await _api.get('/idosos/$idosoId/contatos');
+    return ApiClient.listaDaResposta(corpo).map(Contato.fromJson).toList()
+      ..sort((a, b) => a.ordemEscalonamento.compareTo(b.ordemEscalonamento));
+  }
+
   /// POST /idosos/{id}/contatos
   Future<Contato> cadastrarContato(int idosoId, Contato contato) async {
     final corpo =
