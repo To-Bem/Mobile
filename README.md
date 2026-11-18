@@ -1,14 +1,42 @@
 # Tô Bem — App do familiar/cuidador (Dart puro)
 
 Aplicação de terminal em **Dart puro** (sem Flutter) para o projeto Tô Bem —
-Global Solution 2026/2 (CitizenTech), FIAP.
+Global Solution 2026/2 (CitizenTech), FIAP · Mobile Development.
 
-A lâmpada com radar (ESP32) acompanha o idoso que mora sozinho, sem câmeras.
-Este app é o lado da família: mostra quem está bem, quem precisa de atenção,
-os alertas abertos e permite cadastrar idosos, lâmpadas e rotinas.
+**Todos os dados vêm da API Java** ([To-Bem/JAVA](https://github.com/To-Bem/JAVA)),
+que roda em containers numa VM no Microsoft Azure. O app não tem dados mockados.
 
-**Todos os dados vêm da API Java** ([To-Bem/JAVA](https://github.com/To-Bem/JAVA)).
-O app não tem dados mockados.
+| | |
+|---|---|
+| Integrantes | Matheus Guimarães Rosa — RM 567912 · Lucas Shida Rodrigues da Costa — RM 568194 · Pedro Henrique Pinheiro Falchi — RM 566967 |
+| Turma | 2TDSPS |
+| Vídeo do app | https://youtu.be/-YyKNQjuFcQ |
+| Executável | aba **Releases** deste repositório (`tobem.exe`, Windows) |
+
+## O problema e quem se beneficia
+
+No Brasil, cada vez mais idosos moram sozinhos. Uma queda ou um mal-estar pode levar
+horas até alguém perceber. Câmeras resolvem, mas invadem a privacidade.
+
+O Tô Bem usa uma **lâmpada com radar** (ESP32 + sensor mmWave) que percebe movimento,
+queda e falta de atividade **sem nenhuma câmera**. Quando algo foge da rotina, o alerta
+sobe em etapas: primeiro a própria lâmpada pisca e apita, depois a família é avisada e,
+sem resposta, o próximo contato (cuidador ou vizinho).
+
+- **Cidadão beneficiado:** o idoso que mora sozinho, que ganha segurança sem perder
+  autonomia nem privacidade.
+- **Também se beneficiam:** familiares e cuidadores, que acompanham à distância e são
+  avisados na hora certa.
+- **Este app** é o lado da família: mostra quem está bem e quem precisa de atenção,
+  os alertas abertos, a linha do tempo da casa e permite cadastrar idosos, lâmpadas e rotinas.
+
+### ODS relacionados
+
+| ODS | Como o Tô Bem contribui |
+|---|---|
+| **3 — Saúde e bem-estar** | Resposta mais rápida a quedas e mal-estar; acompanhamento da rotina e do calor dentro de casa |
+| **10 — Redução das desigualdades** | Tecnologia de baixo custo para que idosos continuem morando sozinhos com segurança |
+| **11 — Cidades e comunidades sustentáveis** | Rede de cuidado entre família, cuidadores e vizinhos, com moradia segura para a população idosa |
 
 ## Requisitos
 
@@ -17,9 +45,16 @@ O app não tem dados mockados.
 
 ## Como rodar (passo a passo)
 
-### 1. Suba a API Java
+### 1. Use a API na nuvem ou suba a API local
 
-No repositório JAVA, siga o README de lá. Resumo no PowerShell:
+**Na nuvem (Azure):** a API já está no ar na VM do projeto. Basta apontar o app para ela
+e pular para o passo 2:
+
+```powershell
+$env:API_URL = "http://191.238.210.248:8080"
+```
+
+**Local:** no repositório JAVA, siga o README de lá. Resumo no PowerShell:
 
 ```powershell
 $env:ADMIN_EMAIL = 'admin@tobem.com'
@@ -127,3 +162,41 @@ tool/simular.dart             faz o papel da lâmpada contra a API Java
 test/                         testes (com a imitação da API em test/apoio)
 docs/contrato-api.md          rotas usadas e pendências de integração
 ```
+
+## Executável (publicação)
+
+O app é publicado como executável na aba **Releases** do GitHub. Para gerar uma nova versão:
+
+```powershell
+dart compile exe bin/monitor_idoso.dart -o build/tobem.exe
+```
+
+No GitHub: **Releases → Draft a new release**, tag `v1.0.0`, anexe o `build/tobem.exe` e publique.
+Para usar sem instalar o Dart:
+
+```powershell
+chcp 65001
+$env:API_URL = "http://191.238.210.248:8080"
+.\tobem.exe
+```
+
+## Como o app atende aos critérios da disciplina
+
+| Critério | Onde está no app |
+|---|---|
+| **Navegação entre telas** (9 telas) | Login → Menu → Lista de idosos → Detalhe → Alertas / Cadastro de lâmpada / Cadastro de rotina; Monitoramento ao vivo. Cada tela é uma classe com `exibir()`; a opção `0` volta para a anterior, como uma pilha de navegação |
+| **Protótipo visual** | Cabeçalhos, cores ANSI e etiquetas de status (`[ CRÍTICO ]`, `[ TUDO BEM ]`, `[ SEM SINAL ]`), lista ordenada do mais urgente ao que está bem |
+| **Gerenciamento de estado** | Sessão do usuário (perfil ADMIN/MANAGER/MEMBER); contador de alertas abertos que muda ao confirmar (`2 → 1`); modo "fora de casa"; monitoramento que compara a leitura anterior com a atual e avisa o que mudou |
+| **Formulários e validação** | Login e criar conta (e-mail, senha de 8 a 72 caracteres, confirmação); cadastro de idoso (nome, data com idade mínima de 60 anos, telefone, endereço, parentesco); lâmpada (cômodo) e rotina (horário hh:mm, 0 a 10 levantadas). Cada campo é validado na hora e pede de novo; os erros da API aparecem campo a campo |
+| **Git e README** | Histórico de commits por camada; este README |
+
+Recursos do Dart usados: classes e construtores `factory`, `enum` com campos, classes
+`sealed` com `switch` por padrão, records, null safety, genéricos, `async`/`await`,
+`Future.wait`, `Stream` com `async*`/`yield` e `await for`, exceções próprias,
+`dart:io` (`HttpClient`, terminal) e `dart:convert` (JSON). Testes com o pacote `test`.
+
+## Uso de IA
+
+O grupo usou o Claude (Anthropic) como apoio no desenvolvimento: estrutura do projeto em
+camadas, revisão de código, explicação de erros, integração com a API Java, testes e
+documentação. Todo o código foi revisado, executado e testado pelo grupo.
