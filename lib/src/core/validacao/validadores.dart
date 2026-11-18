@@ -32,10 +32,12 @@ String? validarEmail(String? valor) {
   return null;
 }
 
+/// Mesma regra da API Java no cadastro: de 8 a 72 caracteres.
 String? validarSenha(String? valor) {
   final vazio = validarObrigatorio(valor, 'Senha');
   if (vazio != null) return vazio;
-  if (valor!.length < 6) return 'A senha precisa ter pelo menos 6 caracteres.';
+  if (valor!.length < 8) return 'A senha precisa ter pelo menos 8 caracteres.';
+  if (valor.length > 72) return 'A senha pode ter no máximo 72 caracteres.';
   return null;
 }
 
@@ -170,5 +172,37 @@ String? validarNumeroEntre(String? valor, int minimo, int maximo) {
   if (numero == null || numero < minimo || numero > maximo) {
     return 'Digite um número de $minimo a $maximo.';
   }
+  return null;
+}
+
+final RegExp _formatoHora = RegExp(r'^(\d{1,2}):(\d{2})$');
+
+/// "7:30" ou "07:30" -> (7, 30). Null se o horário não existir.
+(int, int)? converterHora(String? valor) {
+  final partes = _formatoHora.firstMatch(valor?.trim() ?? '');
+  if (partes == null) return null;
+  final hora = int.parse(partes.group(1)!);
+  final minuto = int.parse(partes.group(2)!);
+  if (hora > 23 || minuto > 59) return null;
+  return (hora, minuto);
+}
+
+/// Horário no formato hh:mm, de 00:00 a 23:59.
+String? validarHora(String? valor) {
+  final vazio = validarObrigatorio(valor, 'Horário');
+  if (vazio != null) return vazio;
+  if (converterHora(valor) == null) {
+    return 'Horário inválido. Use o formato hh:mm, ex.: 07:30.';
+  }
+  return null;
+}
+
+/// Nome do cômodo onde fica o dispositivo (ex.: Sala, Quarto).
+String? validarComodo(String? valor) {
+  final vazio = validarObrigatorio(valor, 'Cômodo');
+  if (vazio != null) return vazio;
+  final comodo = valor!.trim();
+  if (comodo.length < 3) return 'Nome do cômodo muito curto.';
+  if (comodo.length > 40) return 'Use no máximo 40 caracteres.';
   return null;
 }

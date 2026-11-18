@@ -1,83 +1,89 @@
-import 'dart:io';
-
 import 'package:monitor_idoso/monitor_idoso.dart';
 import 'package:test/test.dart';
 
-import '../tool/api_fake.dart';
+import 'apoio/api_java_falsa.dart';
 import 'apoio/entrada_falsa.dart';
 
 void main() {
-  late HttpServer apiFalsa;
+  late ApiJavaFalsa javaFalsa;
   late ApiClient api;
   late List<String> saida;
 
   setUp(() async {
-    apiFalsa = await iniciarApiFalsa(porta: 0, registrarLog: false);
-    api = ApiClient(baseUrl: 'http://127.0.0.1:${apiFalsa.port}');
+    Terminal.usarCores = false;
+    javaFalsa = await ApiJavaFalsa.iniciar();
+    api = ApiClient(baseUrl: javaFalsa.url);
     saida = <String>[];
   });
 
   tearDown(() async {
     api.fechar();
-    await apiFalsa.close(force: true);
+    await javaFalsa.fechar();
   });
 
-  Future<Sessao> entrarComo(String email) =>
-      AuthService(api).login(email, email == 'admin@email.com' ? 'admin123' : '123456');
+  /// Entra com o usuário e devolve os serviços já ligados à sessão.
+  Future<(IdosoService, AlertaService)> entrarComo(String email) async {
+    final senha = email == 'admin@tobem.com' ? 'Admin@12345' : 'Senha12345';
+    final sessao = await AuthService(api).login(email, senha);
+    final idosos = IdosoService(api, sessao);
+    return (idosos, AlertaService(api, idosos));
+  }
 
   bool mostrou(String trecho) => saida.any((linha) => linha.contains(trecho));
 
   int primeiraLinhaCom(String trecho) =>
       saida.indexWhere((linha) => linha.contains(trecho));
 
+  Future<void> abrirLista(String email, List<String> respostas) async {
+    final (idosos, alertas) = await entrarComo(email);
+    await TelaListaIdosos(
+      titulo: 'Meus idosos',
+      idosoService: idosos,
+      alertaService: alertas,
+      entrada: entradaFalsa(respostas, saida),
+    ).exibir();
+  }
+
+  Future<void> abrirDetalhe(
+    String email,
+    int idosoId,
+    List<String> respostas,
+  ) async {
+    final (idosos, alertas) = await entrarComo(email);
+    await TelaDetalheIdoso(
+      idosoId: idosoId,
+      idosoService: idosos,
+      alertaService: alertas,
+      entrada: entradaFalsa(respostas, saida),
+    ).exibir();
+  }
+
   group('TelaListaIdosos', () {
     test('familiar vê os seus idosos, do mais urgente ao que está bem',
         () async {
-      await entrarComo('ana@email.com');
-      final entrada = entradaFalsa(['0'], saida);
-
-      await TelaListaIdosos(
-        titulo: 'Meus idosos',
-        idosoService: IdosoService(api),
-        alertaService: AlertaService(api),
-        entrada: entrada,
-      ).exibir();
+      await abrirLista('ana@email.com', ['0']);
 
       expect(mostrou('1) Dona Lurdes'), isTrue);
       expect(mostrou('2) Seu João'), isTrue);
       expect(mostrou('3) Dona Maria'), isTrue);
+      expect(mostrou('[ CRÍTICO ]'), isTrue);
       expect(mostrou('Seu Antônio'), isFalse);
     });
 
-    test('cuidador vê só os idosos atribuídos a ele', () async {
-      await entrarComo('carlos@email.com');
-      final entrada = entradaFalsa(['0'], saida);
+    test('cuidador vê só os idosos em que é contato', () async {
+      await abrirLista('carlos@email.com', ['0']);
 
-      await TelaListaIdosos(
-        titulo: 'Idosos que acompanho',
-        idosoService: IdosoService(api),
-        alertaService: AlertaService(api),
-        entrada: entrada,
-      ).exibir();
-
-      expect(mostrou('Dona Lurdes'), isTrue);
-      expect(mostrou('Seu Antônio'), isTrue);
+      expect(mostrou('1) Dona Lurdes'), isTrue);
+      expect(mostrou('2) Seu Antônio'), isTrue);
+      expect(mostrou('[ SEM SINAL ]'), isTrue);
       expect(mostrou('Fora de casa'), isTrue);
       expect(mostrou('Dona Maria'), isFalse);
     });
 
     test('escolher um idoso abre o detalhe e voltar recarrega a lista',
         () async {
-      await entrarComo('ana@email.com');
       // 1 = Dona Lurdes · 0 = voltar do detalhe · 0 = voltar da lista
-      final entrada = entradaFalsa(['1', '0', '0'], saida);
-
-      await TelaListaIdosos(
-        titulo: 'Meus idosos',
-        idosoService: IdosoService(api),
-        alertaService: AlertaService(api),
-        entrada: entrada,
-      ).exibir();
+      await abrirLista('ana@email.com', ['1', '0', '0']);
 
       expect(mostrou('DONA LURDES'), isTrue);
       expect(saida.where((linha) => linha.contains('MEUS IDOSOS')).length, 2);
@@ -85,93 +91,52 @@ void main() {
   });
 
   group('TelaDetalheIdoso', () {
-    test('mostra status, ambiente e linha do tempo', () async {
-      await entrarComo('ana@email.com');
-      final entrada = entradaFalsa(['0'], saida);
-
-      await TelaDetalheIdoso(
-        idosoId: 3,
-        idosoService: IdosoService(api),
-        alertaService: AlertaService(api),
-        entrada: entrada,
-      ).exibir();
+    test('mostra status, dispositivos, contatos e linha do tempo', () async {
+      await abrirDetalhe('ana@email.com', 3, ['0']);
 
       expect(mostrou('DONA LURDES'), isTrue);
-      expect(mostrou('Crítico'), isTrue);
-      expect(mostrou('(11) 97777-6666'), isTrue);
-      expect(mostrou('Alertas abertos: 2'), isTrue);
-      expect(mostrou('33,5 °C'), isTrue);
-      expect(mostrou('Calor perigoso'), isTrue);
-      expect(mostrou('Pessoa parada por muito tempo (Banheiro)'), isTrue);
+      expect(mostrou('Status: [ CRÍTICO ] Crítico'), isTrue);
+      expect(mostrou('(11) 96666-5555'), isTrue);
+      expect(mostrou('Alertas abertos: 1'), isTrue);
+      expect(mostrou('#3 Lâmpada (Banheiro) [ ONLINE ]'), isTrue);
+      expect(mostrou('1º Ana Souza (você) (Filho(a))'), isTrue);
+      expect(mostrou('2º Usuário #3 (Cuidador(a))'), isTrue);
+      expect(mostrou('Possível queda (família avisada) (Banheiro)'), isTrue);
       expect(
-        primeiraLinhaCom('Pessoa parada'),
-        lessThan(primeiraLinhaCom('Leitura de temperatura')),
+        primeiraLinhaCom('Possível queda'),
+        lessThan(primeiraLinhaCom('Pessoa parada no cômodo')),
+      );
+      // MEMBER não altera o modo: a opção nem aparece.
+      expect(mostrou('fora de casa'), isFalse);
+    });
+
+    test('ambiente e rotina da Dona Maria; Atualizar recarrega', () async {
+      await abrirDetalhe('ana@email.com', 1, ['1', '0']);
+
+      expect(saida.where((linha) => linha.contains('DONA MARIA')).length, 2);
+      expect(mostrou('Ambiente: 27,0 °C'), isTrue);
+      expect(mostrou('Calor perigoso'), isFalse);
+      expect(mostrou('Todos os dias: acorda às 07:00 | 2 levantadas'), isTrue);
+    });
+
+    test('idoso de outra família mostra o erro da API', () async {
+      await abrirDetalhe('ana@email.com', 4, ['']);
+
+      expect(
+        mostrou('Você não tem permissão para executar esta ação'),
+        isTrue,
       );
     });
 
-    test('Atualizar busca o painel de novo', () async {
-      await entrarComo('ana@email.com');
-      final entrada = entradaFalsa(['1', '0'], saida);
+    test('administrador marca que o idoso voltou para casa', () async {
+      // 5 = marcar que voltou · s = sim · Enter · 0 = voltar
+      await abrirDetalhe('admin@tobem.com', 4, ['5', 's', '', '0']);
 
-      await TelaDetalheIdoso(
-        idosoId: 1,
-        idosoService: IdosoService(api),
-        alertaService: AlertaService(api),
-        entrada: entrada,
-      ).exibir();
-
-      expect(saida.where((linha) => linha.contains('DONA MARIA')).length, 2);
-      expect(mostrou('Calor perigoso'), isFalse);
-    });
-
-    test('idoso de outra família mostra erro', () async {
-      await entrarComo('ana@email.com');
-      final entrada = entradaFalsa([''], saida);
-
-      await TelaDetalheIdoso(
-        idosoId: 4,
-        idosoService: IdosoService(api),
-        alertaService: AlertaService(api),
-        entrada: entrada,
-      ).exibir();
-
-      expect(mostrou('Idoso não encontrado.'), isTrue);
-    });
-  });
-
-  group('TelaMenuPrincipal', () {
-    test('familiar vê o resumo e o aviso de urgência', () async {
-      final sessao = await entrarComo('ana@email.com');
-      final entrada = entradaFalsa(['0'], saida);
-
-      await TelaMenuPrincipal(
-        sessao: sessao,
-        idosoService: IdosoService(api),
-        alertaService: AlertaService(api),
-        entrada: entrada,
-      ).exibir();
-
-      expect(mostrou('Olá, Ana Souza (Familiar)'), isTrue);
-      expect(mostrou('Você acompanha 3 idosos'), isTrue);
-      expect(mostrou('1 idoso precisa de atenção agora.'), isTrue);
-      expect(mostrou('1) Meus idosos'), isTrue);
-      expect(mostrou('2) Alertas (3 abertos)'), isTrue);
-      expect(mostrou('0) Sair'), isTrue);
-    });
-
-    test('o texto do menu muda conforme o papel', () async {
-      final sessao = await entrarComo('admin@email.com');
-      final entrada = entradaFalsa(['0'], saida);
-
-      await TelaMenuPrincipal(
-        sessao: sessao,
-        idosoService: IdosoService(api),
-        alertaService: AlertaService(api),
-        entrada: entrada,
-      ).exibir();
-
-      expect(mostrou('1) Todos os idosos'), isTrue);
-      expect(mostrou('Você acompanha 4 idosos'), isTrue);
+      expect(mostrou('5) Marcar que voltou para casa'), isTrue);
+      expect(mostrou('Pronto! Agora: Em casa.'), isTrue);
+      expect(mostrou('5) Marcar como fora de casa'), isTrue);
+      expect(javaFalsa.dados.idoso(4)!.modo, 'NORMAL');
+      expect(javaFalsa.rotasChamadas, contains('PUT /api/idosos/4'));
     });
   });
 }

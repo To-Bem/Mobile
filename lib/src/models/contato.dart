@@ -1,46 +1,47 @@
 import '../core/utils/json_utils.dart';
 
-/// Pessoa avisada quando um alerta não é confirmado.
-/// Pode ser um usuário do sistema (familiar/cuidador) ou alguém sem conta (ex.: vizinho).
+/// Vínculo entre um usuário (familiar/cuidador) e um idoso
+/// (ContatoResponse do Java). Define quem é avisado, e em que ordem,
+/// quando um alerta não é confirmado.
 class Contato {
   const Contato({
-    this.id,
-    this.idosoId,
-    this.usuarioId,
-    required this.nome,
-    required this.telefone,
+    required this.id,
+    required this.idosoId,
+    required this.usuarioId,
     required this.parentesco,
     required this.ordemEscalonamento,
+    this.nomeUsuario = '',
   });
 
-  final int? id;
-  final int? idosoId;
-  final int? usuarioId;
-  final String nome;
-  final String telefone;
+  final int id;
+  final int idosoId;
+  final int usuarioId;
   final String parentesco;
 
   /// 1 = primeiro a ser avisado, 2 = segundo, e assim por diante.
   final int ordemEscalonamento;
 
+  /// Preenchido pelo app quando a API permite consultar o usuário.
+  final String nomeUsuario;
+
   factory Contato.fromJson(Map<String, dynamic> json) {
     return Contato(
-      id: lerIntOuNulo(json['id']),
-      idosoId: lerIntOuNulo(json['idosoId']),
-      usuarioId: lerIntOuNulo(json['usuarioId']),
-      nome: lerTexto(json['nome']),
-      telefone: lerTexto(json['telefone']),
+      id: lerInt(json['id']),
+      idosoId: lerInt(json['idosoId']),
+      usuarioId: lerInt(json['usuarioId']),
       parentesco: lerTexto(json['parentesco']),
       ordemEscalonamento: lerInt(json['ordemEscalonamento'], 1),
     );
   }
 
-  /// Corpo do POST /idosos/{id}/contatos.
-  Map<String, dynamic> toJson() => {
-    if (usuarioId != null) 'usuarioId': usuarioId,
-    'nome': nome,
-    'telefone': telefone,
-    'parentesco': parentesco,
-    'ordemEscalonamento': ordemEscalonamento,
-  };
+  Contato copyWith({String? nomeUsuario}) {
+    return Contato(
+      id: id,
+      idosoId: idosoId,
+      usuarioId: usuarioId,
+      parentesco: parentesco,
+      ordemEscalonamento: ordemEscalonamento,
+      nomeUsuario: nomeUsuario ?? this.nomeUsuario,
+    );
+  }
 }

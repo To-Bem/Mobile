@@ -29,12 +29,13 @@ void main() {
   });
 
   group('validarSenha', () {
-    test('mínimo de 6 caracteres', () {
-      expect(validarSenha('12345'), isNotNull);
-      expect(validarSenha('123456'), isNull);
+    test('de 8 a 72 caracteres, como na API Java', () {
+      expect(validarSenha('1234567'), isNotNull);
+      expect(validarSenha('12345678'), isNull);
+      expect(validarSenha('a' * 73), isNotNull);
     });
 
-    test('vazia é erro', () {
+    test('vazia', () {
       expect(validarSenha(''), 'Senha: preenchimento obrigatório.');
     });
   });
@@ -175,5 +176,26 @@ void main() {
     expect(validarNumeroEntre('0', 1, 30), 'Digite um número de 1 a 30.');
     expect(validarNumeroEntre('31', 1, 30), isNotNull);
     expect(validarNumeroEntre('dois', 1, 30), isNotNull);
+  });
+
+  group('validarHora', () {
+    test('aceita hh:mm e h:mm', () {
+      expect(validarHora('07:30'), isNull);
+      expect(validarHora('7:05'), isNull);
+      expect(converterHora('7:05'), (7, 5));
+    });
+
+    test('recusa horário inexistente ou formato errado', () {
+      expect(validarHora('24:00'), isNotNull);
+      expect(validarHora('07:60'), isNotNull);
+      expect(validarHora('0730'), isNotNull);
+      expect(validarHora(''), 'Horário: preenchimento obrigatório.');
+    });
+  });
+
+  test('validarComodo', () {
+    expect(validarComodo('Sala'), isNull);
+    expect(validarComodo('Sa'), isNotNull);
+    expect(validarComodo(''), 'Cômodo: preenchimento obrigatório.');
   });
 }

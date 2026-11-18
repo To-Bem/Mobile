@@ -4,10 +4,12 @@ import 'dart:io';
 import 'package:monitor_idoso/monitor_idoso.dart';
 import 'package:test/test.dart';
 
-/// Servidor HTTP local que faz o papel da API Java nos testes.
-/// Responde com [status] e [corpo] e guarda a última requisição recebida.
-class ServidorFalso {
-  ServidorFalso._(this._servidor);
+import 'apoio/api_java_falsa.dart';
+
+/// Servidor mínimo que devolve sempre a mesma resposta e guarda a última
+/// requisição. Serve para testar o ApiClient sozinho.
+class ServidorFixo {
+  ServidorFixo._(this._servidor);
 
   final HttpServer _servidor;
 
@@ -20,14 +22,14 @@ class ServidorFalso {
   String? ultimoCorpoRecebido;
   Map<String, String> ultimosParametros = {};
 
-  static Future<ServidorFalso> iniciar() async {
+  static Future<ServidorFixo> iniciar() async {
     final servidor = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final falso = ServidorFalso._(servidor);
-    servidor.listen(falso._responder);
-    return falso;
+    final fixo = ServidorFixo._(servidor);
+    servidor.listen(fixo._responder);
+    return fixo;
   }
 
-  String get url => 'http://${_servidor.address.address}:${_servidor.port}';
+  String get url => 'http://127.0.0.1:${_servidor.port}';
 
   Future<void> _responder(HttpRequest requisicao) async {
     ultimoMetodo = requisicao.method;
@@ -50,61 +52,109 @@ class ServidorFalso {
   Future<void> fechar() => _servidor.close(force: true);
 }
 
-Map<String, dynamic> idosoJson(int id, String nome) => {
-  'id': id,
-  'nome': nome,
-  'modo': 'NORMAL',
-  'status': 'OK',
-};
-
 void main() {
-  late ServidorFalso servidor;
-  late ApiClient api;
-
-  setUp(() async {
-    servidor = await ServidorFalso.iniciar();
-    api = ApiClient(baseUrl: servidor.url);
-  });
-
-  tearDown(() async {
-    api.fechar();
-    await servidor.fechar();
-  });
-
   group('ApiClient', () {
-    test('envia o token e lê o JSON', () async {
+    late ServidorFixo servidor;
+    late ApiClient api;
+
+    setUp(() async {
+      servidor = await ServidorFixo.iniciar();
+      api = ApiClient(baseUrl: servidor.url);
+    });
+
+    tearDown(() async {
+      api.fechar();
+      await servidor.fechar();
+    });
+
+    test('envia o token, os parâmetros e lê o JSON', () async {
       servidor.corpo = {'ok': true};
       api.token = 'abc';
 
-      final corpo = await api.get('/teste');
+      final corpo = await api.get(
+        '/api/idosos',
+        parametros: ApiClient.pagina(ordenarPor: 'nome'),
+      );
 
       expect(corpo, {'ok': true});
       expect(servidor.ultimoAuthorization, 'Bearer abc');
+      expect(servidor.ultimosParametros, {
+        'page': '0',
+        'size': '100',
+        'sort': 'nome',
+        'direction': 'ASC',
+      });
     });
 
-    test('erro 400 traz a mensagem e os campos da API', () async {
+    test('PUT envia o corpo em JSON', () async {
+      servidor.corpo = {'id': 1};
+
+      await api.put('/api/alertas/1', {'status': 'RESOLVIDO'});
+
+      expect(servidor.ultimoMetodo, 'PUT');
+      expect(servidor.ultimoCaminho, '/api/alertas/1');
+      expect(jsonDecode(servidor.ultimoCorpoRecebido!), {
+        'status': 'RESOLVIDO',
+      });
+    });
+
+    test('400 de validação do Java vira mensagem + campos', () async {
       servidor
         ..status = 400
         ..corpo = {
-          'mensagem': 'Dados inválidos',
-          'campos': {'telefone': 'obrigatório'},
+          'timestamp': '2026-11-17T10:00:00',
+          'status': 400,
+          'error': 'Bad Request',
+          'errors': [
+            {'field': 'telefone', 'message': 'telefone é obrigatorio'},
+          ],
         };
 
       await expectLater(
-        api.post('/idosos', {'nome': 'X'}),
+        api.post('/api/usuarios/1/idoso', {'nome': 'X'}),
         throwsA(
           isA<ApiException>()
-              .having((e) => e.mensagem, 'mensagem', 'Dados inválidos')
-              .having((e) => e.campos['telefone'], 'campo', 'obrigatório'),
+              .having((e) => e.statusCode, 'status', 400)
+              .having(
+                (e) => e.mensagem,
+                'mensagem',
+                'Dados inválidos. Confira os campos:',
+              )
+              .having(
+                (e) => e.campos['telefone'],
+                'campo',
+                'telefone é obrigatorio',
+              ),
         ),
       );
     });
 
-    test('erro 404 sem corpo usa mensagem padrão', () async {
+    test('erro do Java traz o campo "message"', () async {
+      servidor
+        ..status = 409
+        ..corpo = {
+          'status': 409,
+          'error': 'Conflict',
+          'message': 'Um alerta resolvido nao pode ser reaberto.',
+        };
+
+      await expectLater(
+        api.put('/api/alertas/1', {}),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.mensagem,
+            'mensagem',
+            'Um alerta resolvido nao pode ser reaberto.',
+          ),
+        ),
+      );
+    });
+
+    test('404 sem corpo usa mensagem padrão', () async {
       servidor.status = 404;
 
       await expectLater(
-        api.get('/idosos/99/painel'),
+        api.get('/api/idosos/99'),
         throwsA(
           isA<ApiException>().having(
             (e) => e.mensagem,
@@ -115,11 +165,16 @@ void main() {
       );
     });
 
-    test('401 vira NaoAutorizadoException', () async {
+    test('401 e 403 viram NaoAutorizadoException', () async {
       servidor.status = 401;
-
       await expectLater(
-        api.get('/idosos'),
+        api.get('/api/idosos'),
+        throwsA(isA<NaoAutorizadoException>()),
+      );
+
+      servidor.status = 403;
+      await expectLater(
+        api.get('/api/idosos'),
         throwsA(isA<NaoAutorizadoException>()),
       );
     });
@@ -131,27 +186,23 @@ void main() {
 
       final semServidor = ApiClient(baseUrl: urlSemServidor);
       await expectLater(
-        semServidor.get('/idosos'),
+        semServidor.get('/api/idosos'),
         throwsA(isA<SemConexaoException>()),
       );
       semServidor.fechar();
     });
 
-    test('listaDaResposta aceita lista, página e _embedded', () {
+    test('listaDaResposta aceita lista e PageResponse', () {
       final item = {'id': 1};
       expect(ApiClient.listaDaResposta([item]), [item]);
       expect(
         ApiClient.listaDaResposta({
           'content': [item],
+          'page': 0,
+          'size': 10,
           'totalElements': 1,
-        }),
-        [item],
-      );
-      expect(
-        ApiClient.listaDaResposta({
-          '_embedded': {
-            'idosos': [item],
-          },
+          'totalPages': 1,
+          'last': true,
         }),
         [item],
       );
@@ -159,120 +210,282 @@ void main() {
     });
   });
 
-  group('AuthService', () {
-    test('login guarda o token e envia e-mail sem espaços', () async {
-      servidor.corpo = {
-        'token': 'jwt123',
-        'usuario': {
-          'id': 1,
-          'nome': 'Ana',
-          'email': 'ana@email.com',
-          'papel': 'FAMILIAR',
-        },
-      };
-      final auth = AuthService(api);
+  group('Serviços contra a API Java (imitação)', () {
+    late ApiJavaFalsa javaFalsa;
+    late ApiClient api;
+    late AuthService auth;
 
-      final sessao = await auth.login('  ana@email.com ', '123456');
+    setUp(() async {
+      javaFalsa = await ApiJavaFalsa.iniciar();
+      api = ApiClient(baseUrl: javaFalsa.url);
+      auth = AuthService(api);
+    });
 
-      expect(sessao.usuario.nome, 'Ana');
-      expect(api.token, 'jwt123');
-      expect(auth.logado, isTrue);
-      expect(servidor.ultimoMetodo, 'POST');
-      expect(servidor.ultimoCaminho, '/auth/login');
-      expect(jsonDecode(servidor.ultimoCorpoRecebido!), {
-        'email': 'ana@email.com',
-        'senha': '123456',
+    tearDown(() async {
+      api.fechar();
+      await javaFalsa.fechar();
+    });
+
+    group('AuthService', () {
+      test('login usa email/password, guarda o token e busca o /me', () async {
+        final sessao = await auth.login(' ana@email.com ', 'Senha12345');
+
+        expect(sessao.token, 'token-falso-2');
+        expect(sessao.perfil, Perfil.member);
+        expect(sessao.ehGestao, isFalse);
+        expect(sessao.usuario.id, 2);
+        expect(sessao.usuario.nome, 'Ana Souza');
+        expect(sessao.usuario.papel, Papel.familiar);
+        expect(api.token, 'token-falso-2');
+        expect(javaFalsa.rotasChamadas, [
+          'POST /api/auth/login',
+          'GET /api/auth/me',
+        ]);
+      });
+
+      test('admin é gestão', () async {
+        final sessao = await auth.login('admin@tobem.com', 'Admin@12345');
+        expect(sessao.perfil, Perfil.admin);
+        expect(sessao.ehGestao, isTrue);
+      });
+
+      test('senha errada vira mensagem amigável', () async {
+        await expectLater(
+          auth.login('ana@email.com', 'errada123'),
+          throwsA(
+            isA<ApiException>().having(
+              (e) => e.mensagem,
+              'mensagem',
+              'E-mail ou senha inválidos.',
+            ),
+          ),
+        );
+        expect(auth.logado, isFalse);
+        expect(api.token, isNull);
+      });
+
+      test('cadastrar cria a conta MEMBER e já entra', () async {
+        final sessao = await auth.cadastrar(
+          nome: 'Bia Nova',
+          email: 'bia@email.com',
+          senha: 'Senha12345',
+        );
+
+        expect(sessao.usuario.nome, 'Bia Nova');
+        expect(sessao.perfil, Perfil.member);
+        expect(sessao.usuario.papel, isNull);
+      });
+
+      test('e-mail repetido no cadastro', () async {
+        await expectLater(
+          auth.cadastrar(
+            nome: 'Ana',
+            email: 'ana@email.com',
+            senha: 'Senha12345',
+          ),
+          throwsA(
+            isA<ApiException>().having(
+              (e) => e.mensagem,
+              'mensagem',
+              'Já existe uma conta com este e-mail.',
+            ),
+          ),
+        );
+      });
+
+      test('sair apaga o token', () async {
+        await auth.login('ana@email.com', 'Senha12345');
+        auth.sair();
+        expect(auth.logado, isFalse);
+        expect(api.token, isNull);
       });
     });
 
-    test('senha errada vira mensagem amigável', () async {
-      servidor.status = 401;
-      final auth = AuthService(api);
+    group('IdosoService', () {
+      Future<IdosoService> servicoDe(String email, [String? senha]) async {
+        final sessao = await auth.login(
+          email,
+          senha ?? (email == 'admin@tobem.com' ? 'Admin@12345' : 'Senha12345'),
+        );
+        return IdosoService(api, sessao);
+      }
 
-      await expectLater(
-        auth.login('ana@email.com', 'errada'),
-        throwsA(
-          isA<ApiException>().having(
-            (e) => e.mensagem,
-            'mensagem',
-            'E-mail ou senha inválidos.',
+      test('MEMBER vê só os idosos em que é contato', () async {
+        final idosos = await (await servicoDe('ana@email.com')).listar();
+        expect(
+          idosos.map((idoso) => idoso.nome),
+          unorderedEquals(['Dona Maria', 'Seu João', 'Dona Lurdes']),
+        );
+        expect(
+          javaFalsa.rotasChamadas,
+          contains('GET /api/usuarios/2/withContatos'),
+        );
+        expect(javaFalsa.rotasChamadas, isNot(contains('GET /api/idosos')));
+      });
+
+      test('ADMIN vê todos pela listagem paginada', () async {
+        final idosos = await (await servicoDe('admin@tobem.com')).listar();
+        expect(idosos, hasLength(4));
+        expect(javaFalsa.rotasChamadas, contains('GET /api/idosos'));
+      });
+
+      test('situação calculada a partir de alertas e dispositivos', () async {
+        final idosos = await (await servicoDe('admin@tobem.com')).listar();
+        final porNome = {for (final idoso in idosos) idoso.nome: idoso};
+
+        expect(porNome['Dona Maria']!.status, StatusIdoso.ok);
+        expect(porNome['Dona Maria']!.alertasAbertos, 0);
+        expect(porNome['Seu João']!.status, StatusIdoso.atencao);
+        expect(porNome['Seu João']!.alertasAbertos, 1);
+        expect(porNome['Dona Lurdes']!.status, StatusIdoso.critico);
+        expect(porNome['Seu Antônio']!.status, StatusIdoso.offline);
+        expect(porNome['Seu Antônio']!.estaAusente, isTrue);
+      });
+
+      test('painel junta withAll e os eventos dos dispositivos', () async {
+        final painel = await (await servicoDe('ana@email.com')).painel(1);
+
+        expect(painel.idoso.nome, 'Dona Maria');
+        expect(painel.idoso.dataNascimento, DateTime(1948, 3, 12));
+        expect(painel.contatos.single.parentesco, 'Filho(a)');
+        expect(painel.rotinas.single.horaCurta, '07:00');
+        expect(painel.dispositivos.single.comodo, 'Sala');
+        expect(painel.eventos.first.tipo, 'TEMPERATURA');
+        expect(painel.eventos.first.comodo, 'Sala');
+        expect(painel.temperatura, 27);
+        // A temperatura não conta como atividade; o movimento, sim.
+        expect(
+          painel.idoso.ultimaAtividade,
+          painel.eventos.firstWhere((e) => e.tipo == 'MOVIMENTO').dataHora,
+        );
+        expect(
+          javaFalsa.rotasChamadas,
+          containsAll([
+            'GET /api/idosos/1/withAll',
+            'GET /api/eventos/byOtherFilter',
+          ]),
+        );
+      });
+
+      test('MEMBER não abre idoso de outra família', () async {
+        await expectLater(
+          (await servicoDe('carlos@email.com')).painel(1),
+          throwsA(isA<NaoAutorizadoException>()),
+        );
+      });
+
+      test('cadastrar envia parentesco e ordem como parâmetros', () async {
+        final servico = await servicoDe('ana@email.com');
+        final salvo = await servico.cadastrar(
+          Idoso(
+            nome: 'Dona Cida',
+            dataNascimento: DateTime(1945, 8, 9),
+            telefone: '11944443333',
+            endereco: 'Rua Nova, 10',
           ),
-        ),
-      );
-      expect(auth.logado, isFalse);
+          parentesco: 'Filho(a)',
+        );
+
+        expect(salvo.id, isNotNull);
+        expect(salvo.dataNascimento, DateTime(1945, 8, 9));
+        expect(javaFalsa.rotasChamadas.last, 'POST /api/usuarios/2/idoso');
+        final contato = javaFalsa.dados.contatos.last;
+        expect(contato.idosoId, salvo.id);
+        expect(contato.usuarioId, 2);
+        expect(contato.ordemEscalonamento, 1);
+        // Já aparece na lista da Ana.
+        expect(
+          (await servico.listar()).map((idoso) => idoso.nome),
+          contains('Dona Cida'),
+        );
+      });
+
+      test('cadastrar dispositivo e rotina', () async {
+        final servico = await servicoDe('ana@email.com');
+
+        final dispositivo = await servico.cadastrarDispositivo(
+          2,
+          const Dispositivo(tipo: TipoDispositivo.base, comodo: 'Cozinha'),
+        );
+        expect(dispositivo.id, isNotNull);
+        expect(dispositivo.tipo, TipoDispositivo.base);
+        expect(dispositivo.status, StatusDispositivo.online);
+
+        final rotina = await servico.cadastrarRotina(
+          2,
+          const Rotina(
+            diaSemana: 'SEGUNDA',
+            horaPrimeiraAtividade: '06:45:00',
+            mediaLevantadasPorNoite: 1,
+          ),
+        );
+        expect(rotina.horaCurta, '06:45');
+      });
+
+      test('alterar modo é só para ADMIN/MANAGER', () async {
+        final membro = await servicoDe('ana@email.com');
+        final maria = (await membro.painel(1)).idoso;
+        await expectLater(
+          membro.alterarModo(maria, ModoIdoso.ausente),
+          throwsA(isA<NaoAutorizadoException>()),
+        );
+
+        final gerente = await servicoDe('gerente@email.com');
+        final atualizado = await gerente.alterarModo(maria, ModoIdoso.ausente);
+        expect(atualizado.modo, ModoIdoso.ausente);
+        expect(javaFalsa.dados.idoso(1)!.dataNascimento, '12/03/1948');
+      });
+
+      test('nomes dos contatos: MEMBER só sabe o próprio nome', () async {
+        final membro = await servicoDe('ana@email.com');
+        final contatos = await membro.comNomes((await membro.painel(3)).contatos);
+        expect(contatos.map((c) => c.nomeUsuario), [
+          'Ana Souza (você)',
+          'Usuário #3',
+        ]);
+
+        final admin = await servicoDe('admin@tobem.com');
+        final todos = await admin.comNomes((await admin.painel(3)).contatos);
+        expect(todos.map((c) => c.nomeUsuario), ['Ana Souza', 'Carlos Lima']);
+      });
     });
 
-    test('sair apaga o token', () {
-      api.token = 'jwt123';
-      AuthService(api).sair();
-      expect(api.token, isNull);
-    });
-  });
+    group('AlertaService', () {
+      Future<AlertaService> servicoDe(String email, String senha) async {
+        final sessao = await auth.login(email, senha);
+        return AlertaService(api, IdosoService(api, sessao));
+      }
 
-  group('IdosoService', () {
-    test('lista idosos vindos em _embedded', () async {
-      servidor.corpo = {
-        '_embedded': {
-          'idosos': [idosoJson(1, 'Dona Maria'), idosoJson(2, 'Seu João')],
-        },
-      };
+      test('MEMBER recebe os alertas dos seus idosos, com nome', () async {
+        final alertas = await (await servicoDe(
+          'ana@email.com',
+          'Senha12345',
+        )).listar();
 
-      final idosos = await IdosoService(api).listar();
+        expect(alertas.map((a) => a.id), [3, 2, 1]); // mais recente primeiro
+        expect(alertas.first.idosoNome, 'Dona Lurdes');
+      });
 
-      expect(idosos.map((i) => i.nome), ['Dona Maria', 'Seu João']);
-    });
+      test('alertas de um idoso só', () async {
+        final alertas = await (await servicoDe(
+          'carlos@email.com',
+          'Senha12345',
+        )).listar(idosoId: 3);
+        expect(alertas.single.tipo, 'QUEDA');
+        expect(alertas.single.nivelEscalonamento, 2);
+      });
 
-    test('alterarModo envia PATCH com o modo', () async {
-      servidor.corpo = idosoJson(7, 'Dona Maria')..['modo'] = 'AUSENTE';
+      test('confirmar manda PUT com status RESOLVIDO', () async {
+        final servico = await servicoDe('ana@email.com', 'Senha12345');
+        final aberto = (await servico.listar()).firstWhere((a) => a.id == 2);
 
-      final idoso = await IdosoService(api).alterarModo(7, ModoIdoso.ausente);
+        final confirmado = await servico.confirmar(aberto);
 
-      expect(servidor.ultimoMetodo, 'PATCH');
-      expect(servidor.ultimoCaminho, '/idosos/7/modo');
-      expect(jsonDecode(servidor.ultimoCorpoRecebido!), {'modo': 'AUSENTE'});
-      expect(idoso.estaAusente, isTrue);
-    });
-  });
-
-  group('AlertaService', () {
-    test('envia só os filtros informados e ordena do mais recente', () async {
-      servidor.corpo = [
-        {
-          'id': 1,
-          'idosoId': 7,
-          'nivel': 'ATENCAO',
-          'status': 'ABERTO',
-          'criadoEm': '2026-11-06T08:00:00',
-        },
-        {
-          'id': 2,
-          'idosoId': 7,
-          'nivel': 'CRITICO',
-          'status': 'ABERTO',
-          'criadoEm': '2026-11-06T10:00:00',
-        },
-      ];
-
-      final alertas = await AlertaService(api)
-          .listar(status: StatusAlerta.aberto, idosoId: 7);
-
-      expect(servidor.ultimosParametros, {'status': 'ABERTO', 'idosoId': '7'});
-      expect(alertas.first.id, 2);
-    });
-
-    test('confirmar chama a rota certa', () async {
-      servidor.corpo = {
-        'id': 2,
-        'idosoId': 7,
-        'nivel': 'CRITICO',
-        'status': 'RESOLVIDO',
-        'criadoEm': '2026-11-06T10:00:00',
-      };
-
-      final alerta = await AlertaService(api).confirmar(2);
-
-      expect(servidor.ultimoCaminho, '/alertas/2/confirmar');
-      expect(alerta.estaAberto, isFalse);
+        expect(confirmado.status, StatusAlerta.resolvido);
+        expect(confirmado.idosoNome, 'Seu João');
+        expect(javaFalsa.rotasChamadas.last, 'PUT /api/alertas/2');
+        expect(javaFalsa.dados.alertas[1].status, 'RESOLVIDO');
+      });
     });
   });
 }

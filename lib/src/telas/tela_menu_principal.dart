@@ -30,27 +30,22 @@ class TelaMenuPrincipal {
 
   Usuario get _usuario => sessao.usuario;
 
-  String get _rotuloIdosos => switch (_usuario.papel) {
-        Papel.familiar => 'Meus idosos',
-        Papel.cuidador => 'Idosos que acompanho',
-        Papel.admin => 'Todos os idosos',
-      };
-
-  /// O cuidador acompanha idosos atribuídos a ele; quem cadastra é a família
-  /// (ou o administrador).
-  bool get _podeCadastrarIdoso => _usuario.papel != Papel.cuidador;
+  /// ADMIN e MANAGER veem todos; MEMBER vê os idosos em que é contato.
+  String get _rotuloIdosos => switch (sessao.perfil) {
+    Perfil.admin || Perfil.manager => 'Todos os idosos',
+    Perfil.member => 'Meus idosos',
+  };
 
   /// Volta quando o usuário escolhe "Sair".
   Future<void> exibir() async {
     while (true) {
       entrada.limparTela();
       entrada.escrever(Terminal.cabecalho(AppConfig.nomeApp));
-      entrada.escrever('Olá, ${_usuario.nome} (${_usuario.papel.rotulo})');
+      entrada.escrever('Olá, ${_usuario.nome} (${sessao.perfil.rotulo})');
       final abertos = await _mostrarResumo();
       entrada.escrever('');
 
-      // Cada opção é um par (texto, ação). A numeração se ajusta sozinha
-      // quando uma opção não aparece para o papel do usuário.
+      // Cada opção é um par (texto, ação): a numeração sai da própria lista.
       final opcoes = <(String, Future<void> Function())>[
         (
           _rotuloIdosos,
@@ -65,12 +60,11 @@ class TelaMenuPrincipal {
           abertos == null ? 'Alertas' : 'Alertas (${textoAbertos(abertos)})',
           () => TelaAlertas(alertaService: _alertas, entrada: entrada).exibir(),
         ),
-        if (_podeCadastrarIdoso)
-          (
-            'Cadastrar idoso',
-            () => TelaCadastroIdoso(idosoService: _idosos, entrada: entrada)
-                .exibir(),
-          ),
+        (
+          'Cadastrar idoso',
+          () => TelaCadastroIdoso(idosoService: _idosos, entrada: entrada)
+              .exibir(),
+        ),
         (
           'Monitoramento ao vivo',
           () => TelaMonitoramento(

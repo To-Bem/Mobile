@@ -1,160 +1,72 @@
-# Contrato Aplicação Dart ↔ API Java
+# Integração do app com a API Java (to_bem_api)
 
-Este é o formato que a aplicação Dart espera. Quem faz a API Java usa este arquivo como
-referência para os DTOs; se algo mudar no Java, atualize aqui também.
+O app consome a API Java real (Spring Boot, JWT). Não há dados mockados no app:
+todas as telas leem e gravam pela API em `API_URL` (padrão `http://localhost:8080`).
 
-## Regras gerais
+A imitação da API em `test/apoio/api_java_falsa.dart` existe **só para os testes
+automatizados** (`dart test`) e responde nas mesmas rotas e formatos do Java.
 
-- **Autenticação:** todas as rotas, menos `/auth/login`, recebem `Authorization: Bearer <token>`.
-- **Enums em MAIÚSCULAS:** `FAMILIAR`, `ATENCAO`, `ABERTO`...
-- **Datas:** `LocalDate` → `"1948-03-12"`; `LocalDateTime` → `"2026-11-06T09:40:00"` (sem fuso).
-- **Fuso horário:** o container da API precisa rodar em `America/Sao_Paulo`
-  (`TZ=America/Sao_Paulo` no compose ou `-Duser.timezone=America/Sao_Paulo` na JVM).
-  A VM da Azure roda em UTC; sem isso, os horários aparecem 3 h adiantados.
-- **HATEOAS:** a aplicação ignora `_links`. Nas listas, ela aceita uma lista pura, uma página do
-  Spring (`content`) ou um `_embedded`. Sugestão para o Java: `@Relation(collectionRelation = "idosos")`
-  e `@Relation(collectionRelation = "alertas")`, para a chave do `_embedded` ficar previsível.
-- **Erros:** a aplicação mostra o campo `mensagem` ao usuário.
+## Autenticação
 
-```json
-{ "status": 400, "mensagem": "Dados inválidos", "campos": { "telefone": "obrigatório" } }
-```
+| Ação | Rota | Observação |
+|---|---|---|
+| Entrar | `POST /api/auth/login` `{email, password}` | Devolve `{token, tokenType, expiresInSeconds, email, role}` |
+| Dados do usuário | `GET /api/auth/me` | O login não traz id/nome; o app busca aqui |
+| Criar conta | `POST /api/auth/register` `{name, email, password}` | Cria MEMBER; senha de 8 a 72 caracteres; 409 se o e-mail existir |
 
-## Endpoints usados
+Todas as outras chamadas levam `Authorization: Bearer <token>`.
+401 (token ausente/expirado) e 403 (sem permissão) viram `NaoAutorizadoException`.
 
-| Método | Rota | Uso na aplicação | Resposta |
-|---|---|---|---|
-| POST | `/auth/login` | Login | 200 `Sessao` |
-| GET | `/idosos` | Listar meus idosos | 200 lista de `Idoso` |
-| POST | `/idosos` | Cadastrar idoso | 201 `Idoso` |
-| GET | `/idosos/{id}/painel` | Detalhe do idoso | 200 `PainelIdoso` |
-| PATCH | `/idosos/{id}/modo` | Marcar "fora de casa" / "em casa" | 200 `Idoso` |
-| GET | `/idosos/{id}/contatos` | Contatos no detalhe do idoso | 200 lista de `Contato` |
-| POST | `/idosos/{id}/contatos` | Cadastrar contato | 201 `Contato` |
-| GET | `/alertas?status=&nivel=&idosoId=` | Listar alertas | 200 lista de `Alerta` |
-| PATCH | `/alertas/{id}/confirmar` | Confirmar alerta | 200 `Alerta` |
+## O que o app chama, por tela
 
-O FAMILIAR e o CUIDADOR só recebem em `/idosos` e `/alertas` os idosos ligados a eles.
+| Tela | ADMIN / MANAGER | MEMBER (familiar/cuidador) |
+|---|---|---|
+| Lista de idosos, menu, monitoramento | `GET /api/idosos?page=0&size=100&sort=nome` | `GET /api/usuarios/{meuId}/withContatos` |
+| Situação de cada idoso | `GET /api/idosos/{id}/withAll` + `GET /api/eventos/byOtherFilter?dispositivoId=&sort=id&direction=DESC` | igual |
+| Nomes dos contatos | `GET /api/usuarios/{id}` | só o próprio nome (os outros aparecem como "Usuário #id") |
+| Alertas | `GET /api/alertas?sort=id&direction=DESC` | `GET /api/alertas/byOtherFilter?idosoId=` (um por idoso) |
+| Confirmar alerta | `PUT /api/alertas/{id}` com `status: RESOLVIDO` (reenvia tipo, nível e escalonamento) | igual |
+| Cadastrar idoso | `POST /api/usuarios/{meuId}/idoso?parentesco=&ordemEscalonamento=1` | igual |
+| Cadastrar dispositivo | `POST /api/idosos/{id}/dispositivo` `{tipo, comodo, status}` | igual |
+| Cadastrar rotina | `POST /api/idosos/{id}/rotina` `{diaSemana, horaPrimeiraAtividade, mediaLevantadasPorNoite}` | igual |
+| Fora de casa / voltou | `PUT /api/idosos/{id}` (cadastro completo com o novo `modo`) | opção não aparece (a API só permite ADMIN/MANAGER) |
 
-### Regras de acesso e erros esperados
+### Formatos
 
-| Situação | Resposta |
-|---|---|
-| CUIDADOR tenta `POST /idosos` | 403 "Cuidadores não podem cadastrar idosos." |
-| FAMILIAR cadastra um idoso | o idoso passa a ser dele (vínculo criado automaticamente) |
-| Idoso ou alerta de outra família | 404 |
-| Confirmar alerta já resolvido | 409 "Este alerta já foi confirmado." |
-| Campos inválidos em POST/PATCH | 400 com `campos` |
-| Idoso cadastrado sem nenhum sinal do dispositivo | `status: OFFLINE`, `ultimaAtividade: null` |
+- Listagens vêm em `PageResponse`: `{content, page, size, totalElements, totalPages, last}`.
+- Datas **enviadas**: `dataNascimento` `yyyy-MM-dd`, `dataHora` `yyyy-MM-ddTHH:mm:ss`, hora `HH:mm:ss`.
+- Datas **recebidas**: `dd/MM/yyyy` e `dd/MM/yyyy HH:mm:ss` (a API grava como texto).
+- Erros: `{status, error, message}` ou, na validação, `{status, error, errors: [{field, message}]}`.
+  O app mostra a mensagem e cada campo.
 
-## Formatos
+## Situação do idoso (calculada no app)
 
-### Login
+A API não devolve status nem última atividade, então o app calcula a partir do `withAll`:
 
-Requisição:
-```json
-{ "email": "ana@email.com", "senha": "123456" }
-```
+1. alerta aberto (ABERTO ou ESCALONADO) mais grave: **Crítico**, **Alerta** ou **Atenção**;
+2. sem nenhum dispositivo ONLINE com sinal recente: **Sem sinal**
+   (sinal = o mais recente entre `ultimoHeartbeat` e o último evento; limite em `SEM_SINAL_MINUTOS`, padrão 15);
+3. senão, **Tudo bem**.
 
-Resposta (`Sessao`):
-```json
-{
-  "token": "eyJhbGciOi...",
-  "usuario": { "id": 1, "nome": "Ana", "email": "ana@email.com", "papel": "FAMILIAR" }
-}
-```
+Última atividade = evento mais recente que mostra a pessoa ativa
+(MOVIMENTO, PRESENCA_PARADA, BOTAO_*, LUZ_*, GELADEIRA_ABERTA, ALERTA_RESOLVIDO_MOVIMENTO).
 
-### Idoso
+## Pontos para alinhar com Java e IoT
 
-```json
-{
-  "id": 7,
-  "nome": "Dona Maria",
-  "dataNascimento": "1948-03-12",
-  "telefone": "11988887777",
-  "endereco": "Rua das Flores, 120",
-  "modo": "NORMAL",
-  "status": "OK",
-  "ultimaAtividade": "2026-11-06T09:40:00",
-  "alertasAbertos": 0
-}
-```
-
-- `modo`: `NORMAL` | `AUSENTE`
-- `status`: `OK` | `ATENCAO` | `ALERTA` | `CRITICO` | `OFFLINE`. Calculado pela API: o pior alerta
-  aberto ou `OFFLINE` se o último heartbeat do dispositivo estiver velho.
-- `status`, `ultimaAtividade` e `alertasAbertos` são só de leitura. O POST e o PUT enviam apenas
-  `nome`, `dataNascimento`, `telefone`, `endereco` e `modo`.
-
-PATCH `/idosos/{id}/modo`:
-```json
-{ "modo": "AUSENTE" }
-```
-
-### PainelIdoso
-
-```json
-{
-  "idoso": { "...": "mesmo formato de Idoso" },
-  "temperatura": 31.5,
-  "umidade": 58,
-  "eventosHoje": [
-    { "id": 120, "tipo": "PRESENCA", "valor": null, "dataHora": "2026-11-06T07:10:00", "comodo": "Corredor" }
-  ]
-}
-```
-
-### Alerta
-
-```json
-{
-  "id": 3,
-  "idosoId": 7,
-  "idosoNome": "Dona Maria",
-  "tipo": "PESSOA_PARADA",
-  "descricao": "Sem movimento no banheiro há 40 min",
-  "nivel": "CRITICO",
-  "status": "ABERTO",
-  "nivelEscalonamento": 1,
-  "criadoEm": "2026-11-06T10:05:00",
-  "resolvidoEm": null
-}
-```
-
-- `nivel`: `ATENCAO` | `ALERTA` | `CRITICO`
-- `status`: `ABERTO` | `ESCALONADO` | `RESOLVIDO`
-
-### Contato
-
-```json
-{
-  "id": 4,
-  "idosoId": 7,
-  "usuarioId": null,
-  "nome": "Vizinha Rosa",
-  "telefone": "11999990000",
-  "parentesco": "Vizinha",
-  "ordemEscalonamento": 2
-}
-```
-
-> Diferença em relação ao diagrama ER: o Contato ganhou `nome` e `telefone`, e `usuario_id`
-> passou a ser opcional. Assim dá para cadastrar um vizinho que não tem conta no sistema.
-> Alinhar com quem faz o Java e o PL/SQL.
-
-## Tipos de evento (alinhar com IoT e .NET)
-
-O ESP32 envia estes tipos para a API .NET, e a aplicação traduz cada um na linha do tempo:
-
-| Tipo | Texto exibido |
-|---|---|
-| `PRESENCA` | Movimento detectado |
-| `PESSOA_PARADA` | Pessoa parada por muito tempo |
-| `BOTAO_ESTOU_BEM` | Apertou "Estou bem" |
-| `BOTAO_SAIU` | Avisou que saiu de casa |
-| `BOTAO_VOLTOU` | Avisou que voltou para casa |
-| `PORTA_GELADEIRA` | Abriu a geladeira |
-| `TEMPERATURA` | Leitura de temperatura |
-| `HEARTBEAT` | Dispositivo online |
-
-Um tipo que não estiver na lista aparece com o próprio nome, sem quebrar nada.
+1. **O firmware do ESP32 envia para `POST /api/eventos`, rota que não existe.** A rota real é
+   `POST /api/dispositivos/{id}/evento` e exige token ADMIN/MANAGER. O firmware precisa fazer login
+   (ou a API precisa de uma rota própria para dispositivos, com chave do aparelho).
+2. **`dataHora` com fuso** (`...-03:00`, como o firmware manda) não é aceito por `LocalDateTime`: enviar sem fuso.
+3. **`valor` é `Integer`**: temperaturas como 27.5 perdem a casa decimal. Sugestão: `Double`.
+4. **Evento não gera alerta sozinho.** Hoje o alerta é criado por `POST /api/eventos/{id}/alerta`
+   (ADMIN/MANAGER). O `tool/simular.dart` faz as duas chamadas; o ideal é a API abrir o alerta
+   ao receber `ALERTA_QUEDA_N2` / `ALERTA_INATIVIDADE_N2`.
+5. **Heartbeat** (`POST /api/dispositivos/{id}/heartbeat`) também exige ADMIN/MANAGER.
+6. **MEMBER não consegue marcar "fora de casa"** (`PUT /api/idosos/{id}` é ADMIN/MANAGER).
+   Sugestão: `PATCH /api/idosos/{id}/modo` liberado para o contato do idoso.
+7. **Não há rota para vincular um 2º contato** a um idoso já cadastrado (`ContatoController` não tem POST).
+8. **Contato não tem nome/telefone** e MEMBER não pode consultar outros usuários:
+   o app mostra "Usuário #id" para os demais contatos.
+9. **Status e última atividade** são calculados no app com várias chamadas por idoso.
+   Um endpoint de resumo (ex.: `GET /api/idosos/{id}/painel`) reduziria as chamadas.
+10. O cadastro público não define `papel` (vem `null`).

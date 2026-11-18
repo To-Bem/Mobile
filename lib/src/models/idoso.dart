@@ -1,9 +1,11 @@
 import '../core/utils/json_utils.dart';
 import 'enums.dart';
 
-/// Idoso acompanhado.
-/// [status], [ultimaAtividade] e [alertasAbertos] são calculados pela API
-/// e só aparecem na leitura (não são enviados no cadastro).
+/// Idoso acompanhado (IdosoResponse do Java).
+///
+/// [status], [ultimaAtividade] e [alertasAbertos] não vêm da API:
+/// o app calcula a partir dos alertas, dispositivos e eventos
+/// (veja PainelIdoso.montar).
 class Idoso {
   const Idoso({
     this.id,
@@ -41,6 +43,7 @@ class Idoso {
 
   bool get estaAusente => modo == ModoIdoso.ausente;
 
+  /// A API devolve dataNascimento como "12/03/1948".
   factory Idoso.fromJson(Map<String, dynamic> json) {
     return Idoso(
       id: lerIntOuNulo(json['id']),
@@ -49,13 +52,11 @@ class Idoso {
       telefone: lerTexto(json['telefone']),
       endereco: lerTexto(json['endereco']),
       modo: enumDaApi(ModoIdoso.values, json['modo'], ModoIdoso.normal),
-      status: enumDaApi(StatusIdoso.values, json['status'], StatusIdoso.ok),
-      ultimaAtividade: lerData(json['ultimaAtividade']),
-      alertasAbertos: lerInt(json['alertasAbertos']),
     );
   }
 
-  /// Corpo do POST/PUT /idosos. Só os campos que o usuário preenche.
+  /// Corpo do POST/PUT de idoso (IdosoRequest do Java).
+  /// A API exige a data no formato yyyy-MM-dd.
   Map<String, dynamic> toJson() {
     final nascimento = dataNascimento;
     return {

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:monitor_idoso/monitor_idoso.dart';
 import 'package:test/test.dart';
 
-import '../tool/api_fake.dart';
+import 'apoio/api_java_falsa.dart';
 
 const Idoso maria = Idoso(id: 1, nome: 'Dona Maria', status: StatusIdoso.ok);
 const Idoso joao = Idoso(
@@ -65,23 +65,24 @@ void main() {
   });
 
   group('MonitorService', () {
-    late HttpServer apiFalsa;
+    late ApiJavaFalsa javaFalsa;
     late ApiClient api;
+    late Sessao sessao;
 
     setUp(() async {
-      apiFalsa = await iniciarApiFalsa(porta: 0, registrarLog: false);
-      api = ApiClient(baseUrl: 'http://127.0.0.1:${apiFalsa.port}');
-      await AuthService(api).login('ana@email.com', '123456');
+      javaFalsa = await ApiJavaFalsa.iniciar();
+      api = ApiClient(baseUrl: javaFalsa.url);
+      sessao = await AuthService(api).login('ana@email.com', 'Senha12345');
     });
 
     tearDown(() async {
       api.fechar();
-      await apiFalsa.close(force: true);
+      await javaFalsa.fechar();
     });
 
     test('leiturasPara conta a primeira consulta, que é imediata', () {
       final monitor = MonitorService(
-        IdosoService(api),
+        IdosoService(api, sessao),
         intervalo: const Duration(seconds: 10),
       );
       expect(monitor.leiturasPara(const Duration(minutes: 2)), 13);
@@ -89,14 +90,14 @@ void main() {
 
     test('intervalo zero não é aceito', () {
       expect(
-        () => MonitorService(IdosoService(api), intervalo: Duration.zero),
+        () => MonitorService(IdosoService(api, sessao), intervalo: Duration.zero),
         throwsArgumentError,
       );
     });
 
     test('o Stream entrega a mudança feita entre duas consultas', () async {
       final monitor = MonitorService(
-        IdosoService(api),
+        IdosoService(api, sessao),
         intervalo: const Duration(milliseconds: 10),
       );
       final leituras = <LeituraMonitor>[];
@@ -104,8 +105,9 @@ void main() {
       await for (final leitura in monitor.leituras(2)) {
         leituras.add(leitura);
         if (leituras.length == 1) {
-          // Enquanto o monitor espera, o "sensor" detecta uma queda.
-          await api.post('/simulador/queda/1', null);
+          // Enquanto o monitor espera, a lâmpada da Dona Maria detecta
+          // uma possível queda e a API abre um alerta crítico.
+          javaFalsa.dados.abrirAlerta(1, 'QUEDA', 'CRITICO');
         }
       }
 
@@ -116,17 +118,18 @@ void main() {
       expect(mudanca.atual.nome, 'Dona Maria');
       expect(mudanca.anterior.status, StatusIdoso.ok);
       expect(mudanca.atual.status, StatusIdoso.critico);
+      expect(mudanca.novosAlertas, 1);
     });
 
     test('API fora do ar vira LeituraFalhou e o Stream continua', () async {
-      final temporario =
-          await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      final semServidor =
-          ApiClient(baseUrl: 'http://127.0.0.1:${temporario.port}');
+      final temporario = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final semServidor = ApiClient(
+        baseUrl: 'http://127.0.0.1:${temporario.port}',
+      );
       await temporario.close(force: true);
 
       final monitor = MonitorService(
-        IdosoService(semServidor),
+        IdosoService(semServidor, sessao),
         intervalo: const Duration(milliseconds: 10),
       );
       final leituras = await monitor.leituras(2).toList();
@@ -134,48 +137,6 @@ void main() {
 
       expect(leituras, hasLength(2));
       expect(leituras, everyElement(isA<LeituraFalhou>()));
-    });
-  });
-
-  group('Simulador da API falsa', () {
-    late HttpServer apiFalsa;
-    late ApiClient api;
-
-    setUp(() async {
-      apiFalsa = await iniciarApiFalsa(porta: 0, registrarLog: false);
-      api = ApiClient(baseUrl: 'http://127.0.0.1:${apiFalsa.port}');
-      await AuthService(api).login('ana@email.com', '123456');
-    });
-
-    tearDown(() async {
-      api.fechar();
-      await apiFalsa.close(force: true);
-    });
-
-    test('saiu e voltou mudam o modo', () async {
-      await api.post('/simulador/saiu/1', null);
-      var maria = (await IdosoService(api).listar()).first;
-      expect(maria.estaAusente, isTrue);
-
-      await api.post('/simulador/voltou/1', null);
-      maria = (await IdosoService(api).listar()).first;
-      expect(maria.estaAusente, isFalse);
-    });
-
-    test('calor cria um alerta de atenção recente', () async {
-      await api.post('/simulador/calor/2', null);
-
-      final alertas = await AlertaService(api).listar(idosoId: 2);
-      expect(alertas.first.tipo, 'CALOR');
-      expect(alertas.first.nivel, NivelAlerta.atencao);
-      expect(alertas.where((alerta) => alerta.estaAberto), hasLength(2));
-    });
-
-    test('idoso inexistente dá 404', () async {
-      await expectLater(
-        api.post('/simulador/queda/99', null),
-        throwsA(isA<ApiException>()),
-      );
     });
   });
 }

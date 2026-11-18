@@ -119,26 +119,30 @@ String etiquetaNivel(NivelAlerta nivel) {
   return Terminal.etiqueta(texto, corDoNivel(nivel));
 }
 
-/// Tipos de alerta gerados pela API (regras de rotina e procedure PL/SQL).
+/// Tipos de alerta usados pelo simulador e pelo firmware da lâmpada.
+/// Tipo desconhecido aparece com o próprio nome.
 const Map<String, String> _tiposDeAlerta = {
+  'QUEDA': 'Possível queda',
+  'ALERTA_QUEDA_N1': 'Possível queda',
+  'ALERTA_QUEDA_N2': 'Possível queda',
+  'INATIVIDADE': 'Sem movimento fora da rotina',
+  'ALERTA_INATIVIDADE_N1': 'Sem movimento fora da rotina',
+  'ALERTA_INATIVIDADE_N2': 'Sem movimento fora da rotina',
   'PESSOA_PARADA': 'Pessoa parada por muito tempo',
-  'SEM_ATIVIDADE': 'Sem atividade fora da rotina',
-  'BANHEIRO_LONGO': 'Muito tempo no banheiro',
   'LEVANTADAS_NOTURNAS': 'Levantou muitas vezes à noite',
+  'TEMPERATURA_ALTA': 'Calor perigoso dentro de casa',
   'CALOR': 'Calor perigoso dentro de casa',
-  'DISPOSITIVO_OFFLINE': 'Dispositivo sem sinal',
+  'SEM_SINAL': 'Dispositivo sem sinal',
   'BOTAO_AJUDA': 'Pediu ajuda pelo botão',
 };
 
 String tituloDoAlerta(Alerta alerta) =>
     _tiposDeAlerta[alerta.tipo] ?? alerta.tipo;
 
-/// Quem já foi avisado, conforme a etapa do escalonamento.
-String textoEscalonamento(int etapa) => switch (etapa) {
-      <= 1 => 'familiar avisado',
-      2 => '2º contato avisado',
-      _ => 'cuidador/agente de saúde avisado',
-    };
+/// Quem está sendo avisado agora: a API guarda no alerta a ordem do
+/// contato da vez (1 = primeiro da fila de aviso).
+String textoEscalonamento(int ordem) =>
+    ordem <= 1 ? '1º contato avisado' : '$ordemº contato avisado';
 
 /// Abertos primeiro (do mais grave ao mais leve), depois os resolvidos.
 /// Dentro de cada grupo, do mais recente para o mais antigo.
@@ -163,3 +167,21 @@ String textoAbertos(int quantidade) => switch (quantidade) {
 /// "15:04:09".
 String horaComSegundos(DateTime momento) => '${_doisDigitos(momento.hour)}:'
     '${_doisDigitos(momento.minute)}:${_doisDigitos(momento.second)}';
+
+// ---------------------------------------------------------------------------
+// Rotina
+// ---------------------------------------------------------------------------
+
+/// Dias aceitos na rotina, no texto que vai para a API.
+const Map<String, String> diasDaSemana = {
+  'TODOS': 'Todos os dias',
+  'SEGUNDA': 'Segunda-feira',
+  'TERCA': 'Terça-feira',
+  'QUARTA': 'Quarta-feira',
+  'QUINTA': 'Quinta-feira',
+  'SEXTA': 'Sexta-feira',
+  'SABADO': 'Sábado',
+  'DOMINGO': 'Domingo',
+};
+
+String rotuloDiaSemana(String dia) => diasDaSemana[dia] ?? dia;

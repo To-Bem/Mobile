@@ -1,51 +1,43 @@
 import '../core/utils/json_utils.dart';
 import 'enums.dart';
 
-/// Usuário logado (familiar, cuidador ou admin).
+/// Usuário da API (UsuarioResponse do Java).
 class Usuario {
   const Usuario({
     required this.id,
     required this.nome,
     required this.email,
-    required this.papel,
+    this.papel,
   });
 
   final int id;
   final String nome;
   final String email;
-  final Papel papel;
+
+  /// Pode vir nulo: o cadastro público (/api/auth/register) não define papel.
+  final Papel? papel;
 
   factory Usuario.fromJson(Map<String, dynamic> json) {
     return Usuario(
       id: lerInt(json['id']),
       nome: lerTexto(json['nome']),
       email: lerTexto(json['email']),
-      papel: enumDaApi(Papel.values, json['papel'], Papel.familiar),
+      papel: enumDaApiOuNulo(Papel.values, json['papel']),
     );
   }
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'nome': nome,
-    'email': email,
-    'papel': enumParaApi(papel),
-  };
 }
 
-/// Resposta do login: token JWT + dados do usuário.
+/// Sessão aberta no login: token JWT, perfil (Role) e dados do usuário.
 class Sessao {
-  const Sessao({required this.token, required this.usuario});
+  const Sessao({
+    required this.token,
+    required this.perfil,
+    required this.usuario,
+  });
 
   final String token;
+  final Perfil perfil;
   final Usuario usuario;
 
-  factory Sessao.fromJson(Map<String, dynamic> json) {
-    final usuario = json['usuario'];
-    return Sessao(
-      token: lerTexto(json['token']),
-      usuario: Usuario.fromJson(
-        usuario is Map<String, dynamic> ? usuario : <String, dynamic>{},
-      ),
-    );
-  }
+  bool get ehGestao => perfil.ehGestao;
 }

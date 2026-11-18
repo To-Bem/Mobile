@@ -15,10 +15,13 @@ Future<void> main(List<String> argumentos) async {
       return;
     }
 
+    // Os serviços dependem da sessão: o perfil (ADMIN, MANAGER ou MEMBER)
+    // decide quais idosos e alertas o usuário enxerga.
+    final idosoService = IdosoService(api, sessao);
     await TelaMenuPrincipal(
       sessao: sessao,
-      idosoService: IdosoService(api),
-      alertaService: AlertaService(api),
+      idosoService: idosoService,
+      alertaService: AlertaService(api, idosoService),
       entrada: entrada,
     ).exibir();
 
@@ -27,6 +30,9 @@ Future<void> main(List<String> argumentos) async {
   } on EntradaEncerradaException {
     entrada.escrever('');
     entrada.escrever('Até logo!');
+  } on NaoAutorizadoException catch (erro) {
+    entrada.mostrarErro('${erro.mensagem} Abra o app de novo para entrar.');
+    exitCode = 1;
   } finally {
     api.fechar();
   }

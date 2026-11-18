@@ -1,7 +1,7 @@
 import '../core/utils/json_utils.dart';
 import 'enums.dart';
 
-/// Alerta gerado quando algo foge da rotina do idoso.
+/// Alerta gerado quando algo foge da rotina do idoso (AlertaResponse do Java).
 class Alerta {
   const Alerta({
     required this.id,
@@ -11,23 +11,25 @@ class Alerta {
     required this.status,
     required this.criadoEm,
     this.idosoNome = '',
-    this.descricao = '',
     this.nivelEscalonamento = 1,
-    this.resolvidoEm,
+    this.usuarioId,
   });
 
   final int id;
   final int idosoId;
+
+  /// Preenchido pelo app (a API devolve só o idosoId).
   final String idosoNome;
   final String tipo;
-  final String descricao;
   final NivelAlerta nivel;
   final StatusAlerta status;
 
-  /// 1 = familiar, 2 = segundo contato, 3 = cuidador/agente de saúde.
+  /// Ordem do contato que está sendo avisado agora (1 = primeiro da fila).
   final int nivelEscalonamento;
   final DateTime criadoEm;
-  final DateTime? resolvidoEm;
+
+  /// Usuário avisado agora (destinatário atual do alerta).
+  final int? usuarioId;
 
   bool get estaAberto => status != StatusAlerta.resolvido;
 
@@ -35,9 +37,7 @@ class Alerta {
     return Alerta(
       id: lerInt(json['id']),
       idosoId: lerInt(json['idosoId']),
-      idosoNome: lerTexto(json['idosoNome']),
       tipo: lerTexto(json['tipo']).toUpperCase(),
-      descricao: lerTexto(json['descricao']),
       nivel: enumDaApi(NivelAlerta.values, json['nivel'], NivelAlerta.atencao),
       status: enumDaApi(
         StatusAlerta.values,
@@ -46,22 +46,30 @@ class Alerta {
       ),
       nivelEscalonamento: lerInt(json['nivelEscalonamento'], 1),
       criadoEm: lerData(json['criadoEm']) ?? DateTime.now(),
-      resolvidoEm: lerData(json['resolvidoEm']),
+      usuarioId: lerIntOuNulo(json['usuarioId']),
     );
   }
 
-  Alerta copyWith({StatusAlerta? status, DateTime? resolvidoEm}) {
+  /// Corpo do PUT /api/alertas/{id} (AlertaRequest do Java).
+  /// A API exige todos os campos, então os atuais são reenviados.
+  Map<String, dynamic> paraAtualizar({StatusAlerta? novoStatus}) => {
+    'tipo': tipo,
+    'nivel': enumParaApi(nivel),
+    'status': enumParaApi(novoStatus ?? status),
+    'nivelEscalonamento': nivelEscalonamento < 1 ? 1 : nivelEscalonamento,
+  };
+
+  Alerta copyWith({StatusAlerta? status, String? idosoNome}) {
     return Alerta(
       id: id,
       idosoId: idosoId,
-      idosoNome: idosoNome,
+      idosoNome: idosoNome ?? this.idosoNome,
       tipo: tipo,
-      descricao: descricao,
       nivel: nivel,
       status: status ?? this.status,
       nivelEscalonamento: nivelEscalonamento,
       criadoEm: criadoEm,
-      resolvidoEm: resolvidoEm ?? this.resolvidoEm,
+      usuarioId: usuarioId,
     );
   }
 }

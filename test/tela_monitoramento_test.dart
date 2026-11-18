@@ -1,10 +1,9 @@
-import 'dart:io';
 import 'dart:math';
 
 import 'package:monitor_idoso/monitor_idoso.dart';
 import 'package:test/test.dart';
 
-import '../tool/api_fake.dart';
+import 'apoio/api_java_falsa.dart';
 import 'apoio/entrada_falsa.dart';
 
 /// IdosoService que devolve uma lista diferente a cada consulta, seguindo
@@ -12,7 +11,14 @@ import 'apoio/entrada_falsa.dart';
 /// Quando o roteiro acaba, repete o último passo.
 class IdosoServiceRoteirizado extends IdosoService {
   IdosoServiceRoteirizado(this.roteiro)
-      : super(ApiClient(baseUrl: 'http://127.0.0.1:9'));
+    : super(
+        ApiClient(baseUrl: 'http://127.0.0.1:9'),
+        const Sessao(
+          token: 'x',
+          perfil: Perfil.member,
+          usuario: Usuario(id: 1, nome: 'Ana', email: 'ana@email.com'),
+        ),
+      );
 
   final List<Object> roteiro;
   int _passo = 0;
@@ -107,39 +113,45 @@ void main() {
   });
 
   group('Menu', () {
-    late HttpServer apiFalsa;
+    late ApiJavaFalsa javaFalsa;
     late ApiClient api;
 
     setUp(() async {
-      apiFalsa = await iniciarApiFalsa(porta: 0, registrarLog: false);
-      api = ApiClient(baseUrl: 'http://127.0.0.1:${apiFalsa.port}');
+      javaFalsa = await ApiJavaFalsa.iniciar();
+      api = ApiClient(baseUrl: javaFalsa.url);
     });
 
     tearDown(() async {
       api.fechar();
-      await apiFalsa.close(force: true);
+      await javaFalsa.fechar();
     });
 
-    Future<void> abrirMenuComo(String email) async {
-      final sessao = await AuthService(api).login(email, '123456');
+    Future<void> abrirMenuComo(String email, String senha) async {
+      final sessao = await AuthService(api).login(email, senha);
+      final idosos = IdosoService(api, sessao);
       await TelaMenuPrincipal(
         sessao: sessao,
-        idosoService: IdosoService(api),
-        alertaService: AlertaService(api),
+        idosoService: idosos,
+        alertaService: AlertaService(api, idosos),
         entrada: entradaFalsa(['0'], saida),
       ).exibir();
     }
 
-    test('familiar: monitoramento é a opção 4', () async {
-      await abrirMenuComo('ana@email.com');
+    test('familiar: resumo, alertas e monitoramento como opção 4', () async {
+      await abrirMenuComo('ana@email.com', 'Senha12345');
+      expect(mostrou('Olá, Ana Souza (Familiar/cuidador)'), isTrue);
+      expect(mostrou('Você acompanha 3 idosos'), isTrue);
+      expect(mostrou('1) Meus idosos'), isTrue);
+      expect(mostrou('2) Alertas (2 abertos)'), isTrue);
       expect(mostrou('3) Cadastrar idoso'), isTrue);
       expect(mostrou('4) Monitoramento ao vivo'), isTrue);
     });
 
-    test('cuidador: sem cadastro, monitoramento vira a opção 3', () async {
-      await abrirMenuComo('carlos@email.com');
-      expect(mostrou('Cadastrar idoso'), isFalse);
-      expect(mostrou('3) Monitoramento ao vivo'), isTrue);
+    test('administrador vê todos os idosos', () async {
+      await abrirMenuComo('admin@tobem.com', 'Admin@12345');
+      expect(mostrou('Olá, Administrador (Administrador)'), isTrue);
+      expect(mostrou('Você acompanha 4 idosos'), isTrue);
+      expect(mostrou('1) Todos os idosos'), isTrue);
     });
   });
 }

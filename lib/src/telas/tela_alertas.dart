@@ -127,16 +127,10 @@ class TelaAlertas {
     entrada.escrever(
       '  $numero) ${etiquetaNivel(alerta.nivel)} $nome${tituloDoAlerta(alerta)}',
     );
-    if (alerta.descricao.isNotEmpty) {
-      entrada.escrever('     ${alerta.descricao}');
-    }
 
-    final resolvidoEm = alerta.resolvidoEm;
     final String situacao;
     if (!alerta.estaAberto) {
-      situacao = resolvidoEm == null
-          ? 'Confirmado'
-          : 'Confirmado: ${horario(resolvidoEm)}';
+      situacao = 'Confirmado';
     } else if (alerta.status == StatusAlerta.escalonado) {
       situacao =
           'Escalonado: ${textoEscalonamento(alerta.nivelEscalonamento)}';
@@ -182,17 +176,14 @@ class TelaAlertas {
     }
 
     try {
-      final confirmado = await _servico.confirmar(alerta.id);
+      final confirmado = await _servico.confirmar(alerta);
       final antes = alertasAbertos;
 
       // Atualiza o estado: troca só o alerta confirmado na lista.
       _alertas = [
         for (final item in _alertas)
           if (item.id == alerta.id)
-            item.copyWith(
-              status: confirmado.status,
-              resolvidoEm: confirmado.resolvidoEm ?? DateTime.now(),
-            )
+            item.copyWith(status: confirmado.status)
           else
             item,
       ];

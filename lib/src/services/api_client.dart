@@ -8,13 +8,11 @@ import 'api_exception.dart';
 /// Cliente HTTP da API Java, feito só com `dart:io` (sem pacotes externos).
 /// Guarda o token JWT depois do login e o envia em todas as chamadas.
 class ApiClient {
-  ApiClient({
-    String? baseUrl,
-    this.tempoLimite = const Duration(seconds: 15),
-  }) : baseUrl = (baseUrl ?? AppConfig.apiBaseUrl).replaceFirst(
-          RegExp(r'/+$'),
-          '',
-        );
+  ApiClient({String? baseUrl, this.tempoLimite = const Duration(seconds: 15)})
+    : baseUrl = (baseUrl ?? AppConfig.apiBaseUrl).replaceFirst(
+        RegExp(r'/+$'),
+        '',
+      );
 
   final String baseUrl;
   final Duration tempoLimite;
@@ -26,11 +24,16 @@ class ApiClient {
   Future<dynamic> get(String caminho, {Map<String, String>? parametros}) =>
       _enviar('GET', caminho, parametros: parametros);
 
-  Future<dynamic> post(String caminho, Object? corpo) =>
-      _enviar('POST', caminho, corpo: corpo);
+  Future<dynamic> post(
+    String caminho,
+    Object? corpo, {
+    Map<String, String>? parametros,
+  }) => _enviar('POST', caminho, corpo: corpo, parametros: parametros);
 
-  Future<dynamic> patch(String caminho, [Object? corpo]) =>
-      _enviar('PATCH', caminho, corpo: corpo);
+  Future<dynamic> put(String caminho, Object? corpo) =>
+      _enviar('PUT', caminho, corpo: corpo);
+
+  Future<dynamic> delete(String caminho) => _enviar('DELETE', caminho);
 
   /// Libera as conexões abertas. Chamar ao encerrar a aplicação.
   void fechar() => _http.close(force: true);
@@ -40,6 +43,19 @@ class ApiClient {
     if (parametros == null || parametros.isEmpty) return uri;
     return uri.replace(queryParameters: parametros);
   }
+
+  /// Parâmetros de paginação da API (PageResponse): página 0, [tamanho]
+  /// registros, ordenados por [ordenarPor] na [direcao] ASC ou DESC.
+  static Map<String, String> pagina({
+    int tamanho = AppConfig.tamanhoPagina,
+    String ordenarPor = 'id',
+    String direcao = 'ASC',
+  }) => {
+    'page': '0',
+    'size': '$tamanho',
+    'sort': ordenarPor,
+    'direction': direcao,
+  };
 
   Future<dynamic> _enviar(
     String metodo,
@@ -55,8 +71,10 @@ class ApiClient {
 
       final tokenAtual = token;
       if (tokenAtual != null) {
-        requisicao.headers
-            .set(HttpHeaders.authorizationHeader, 'Bearer $tokenAtual');
+        requisicao.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer $tokenAtual',
+        );
       }
 
       if (corpo != null) {
@@ -67,8 +85,10 @@ class ApiClient {
       }
 
       final resposta = await requisicao.close().timeout(tempoLimite);
-      final texto =
-          await resposta.transform(utf8.decoder).join().timeout(tempoLimite);
+      final texto = await resposta
+          .transform(utf8.decoder)
+          .join()
+          .timeout(tempoLimite);
       final json = _decodificar(texto);
 
       if (resposta.statusCode >= 200 && resposta.statusCode < 300) {
@@ -98,22 +118,11 @@ class ApiClient {
     }
   }
 
-  /// Extrai a lista de uma resposta da API. Aceita os três formatos que o
-  /// Spring pode devolver: lista pura, página (`content`) ou HATEOAS (`_embedded`).
+  /// Extrai a lista de uma resposta da API: lista pura ou página
+  /// (PageResponse do Java, com a lista em `content`).
   static List<Map<String, dynamic>> listaDaResposta(Object? corpo) {
     Object? lista = corpo;
-
-    if (corpo is Map) {
-      final conteudo = corpo['content'];
-      final embutido = corpo['_embedded'];
-      if (conteudo is List) {
-        lista = conteudo;
-      } else if (embutido is Map) {
-        final listas = embutido.values.whereType<List>();
-        lista = listas.isEmpty ? const [] : listas.first;
-      }
-    }
-
+    if (corpo is Map && corpo['content'] is List) lista = corpo['content'];
     if (lista is! List) return [];
     return lista.whereType<Map<String, dynamic>>().toList();
   }

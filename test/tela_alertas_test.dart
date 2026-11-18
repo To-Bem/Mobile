@@ -1,27 +1,30 @@
-import 'dart:io';
-
 import 'package:monitor_idoso/monitor_idoso.dart';
 import 'package:test/test.dart';
 
-import '../tool/api_fake.dart';
+import 'apoio/api_java_falsa.dart';
 import 'apoio/entrada_falsa.dart';
 
 void main() {
-  late HttpServer apiFalsa;
+  late ApiJavaFalsa javaFalsa;
   late ApiClient api;
   late List<String> saida;
+  late Sessao sessao;
+  late IdosoService idosos;
+  late AlertaService alertas;
 
   setUp(() async {
     Terminal.usarCores = false;
-    apiFalsa = await iniciarApiFalsa(porta: 0, registrarLog: false);
-    api = ApiClient(baseUrl: 'http://127.0.0.1:${apiFalsa.port}');
+    javaFalsa = await ApiJavaFalsa.iniciar();
+    api = ApiClient(baseUrl: javaFalsa.url);
     saida = <String>[];
-    await AuthService(api).login('ana@email.com', '123456');
+    sessao = await AuthService(api).login('ana@email.com', 'Senha12345');
+    idosos = IdosoService(api, sessao);
+    alertas = AlertaService(api, idosos);
   });
 
   tearDown(() async {
     api.fechar();
-    await apiFalsa.close(force: true);
+    await javaFalsa.fechar();
   });
 
   bool mostrou(String trecho) => saida.any((linha) => linha.contains(trecho));
@@ -32,7 +35,7 @@ void main() {
 
   Future<void> abrirAlertas(List<String> respostas, {int? idosoId}) =>
       TelaAlertas(
-        alertaService: AlertaService(api),
+        alertaService: alertas,
         entrada: entradaFalsa(respostas, saida),
         idosoId: idosoId,
       ).exibir();
@@ -43,30 +46,35 @@ void main() {
       await abrirAlertas(['0']);
 
       expect(mostrou('Filtro: Abertos | Nível: todos'), isTrue);
-      expect(mostrou('Alertas abertos: 3'), isTrue);
-      expect(mostrou('1) [ CRÍTICO ] Dona Lurdes - Pessoa parada'), isTrue);
-      expect(mostrou('2) [ ATENÇÃO ] Seu João - Sem atividade'), isTrue);
-      expect(mostrou('3) [ ATENÇÃO ] Dona Lurdes - Calor perigoso'), isTrue);
+      expect(mostrou('Alertas abertos: 2'), isTrue);
+      expect(mostrou('1) [ CRÍTICO ] Dona Lurdes - Possível queda'), isTrue);
+      expect(
+        mostrou('2) [ ATENÇÃO ] Seu João - Sem movimento fora da rotina'),
+        isTrue,
+      );
       expect(mostrou('Escalonado: 2º contato avisado'), isTrue);
+      expect(mostrou('Aberto: 1º contato avisado'), isTrue);
       expect(mostrou('Dona Maria'), isFalse);
     });
 
-    test('confirmar atualiza o contador na hora e o status do idoso na API',
+    test('confirmar atualiza o contador na hora e a situação na API',
         () async {
       // 1 = confirmar · 1 = primeiro alerta · s = sim · Enter · 0 = voltar
       await abrirAlertas(['1', '1', 's', '', '0']);
 
-      expect(mostrou('Alerta confirmado. Alertas abertos: 3 → 2'), isTrue);
-      expect(ultimaTela(), contains('Alertas abertos: 2'));
+      expect(mostrou('Alerta confirmado. Alertas abertos: 2 → 1'), isTrue);
+      expect(ultimaTela(), contains('Alertas abertos: 1'));
       expect(
-        ultimaTela().any((linha) => linha.contains('Pessoa parada')),
+        ultimaTela().any((linha) => linha.contains('Possível queda')),
         isFalse,
       );
+      expect(javaFalsa.rotasChamadas, contains('PUT /api/alertas/3'));
 
-      final lurdes = (await IdosoService(api).listar())
-          .firstWhere((idoso) => idoso.nome == 'Dona Lurdes');
-      expect(lurdes.alertasAbertos, 1);
-      expect(lurdes.status, StatusIdoso.atencao);
+      final lurdes = (await idosos.listar()).firstWhere(
+        (idoso) => idoso.nome == 'Dona Lurdes',
+      );
+      expect(lurdes.alertasAbertos, 0);
+      expect(lurdes.status, StatusIdoso.ok);
     });
 
     test('responder não deixa tudo como estava', () async {
@@ -74,20 +82,20 @@ void main() {
 
       expect(mostrou('Nada foi alterado.'), isTrue);
       expect(mostrou('→'), isFalse);
-
-      final alertas = await AlertaService(api).listar();
-      expect(alertas.where((alerta) => alerta.estaAberto).length, 3);
+      expect(javaFalsa.rotasChamadas.where((r) => r.startsWith('PUT')), isEmpty);
     });
 
     test('alerta já confirmado não pode ser escolhido', () async {
-      // 2 = filtrar status · 3 = Todos · 1 = confirmar · 4 = alerta resolvido
+      // 2 = filtrar status · 3 = Todos · 1 = confirmar · 3 = alerta resolvido
       // 0 = cancelar · 0 = voltar
-      await abrirAlertas(['2', '3', '1', '4', '0', '0']);
+      await abrirAlertas(['2', '3', '1', '3', '0', '0']);
 
       expect(mostrou('Filtro: Todos'), isTrue);
-      expect(mostrou('4) [ ALERTA ] Dona Maria - Levantou muitas vezes'),
-          isTrue);
-      expect(mostrou('Confirmado:'), isTrue);
+      expect(
+        mostrou('3) [ ATENÇÃO ] Dona Maria - Calor perigoso dentro de casa'),
+        isTrue,
+      );
+      expect(mostrou('Confirmado'), isTrue);
       expect(mostrou('Esse alerta já foi confirmado.'), isTrue);
       expect(mostrou('Alerta confirmado'), isFalse);
     });
@@ -98,16 +106,16 @@ void main() {
 
       final tela = ultimaTela();
       expect(tela.first, 'Filtro: Abertos | Nível: Crítico');
-      expect(tela.any((linha) => linha.contains('Pessoa parada')), isTrue);
-      expect(tela.any((linha) => linha.contains('Sem atividade')), isFalse);
+      expect(tela.any((linha) => linha.contains('Possível queda')), isTrue);
+      expect(tela.any((linha) => linha.contains('Sem movimento')), isFalse);
       // O contador continua contando todos os abertos, não só os filtrados.
-      expect(tela, contains('Alertas abertos: 3'));
+      expect(tela, contains('Alertas abertos: 2'));
     });
 
     test('alertas de um idoso só', () async {
       await abrirAlertas(['0'], idosoId: 2);
 
-      expect(mostrou('Seu João - Sem atividade'), isTrue);
+      expect(mostrou('Seu João - Sem movimento'), isTrue);
       expect(mostrou('Dona Lurdes'), isFalse);
       expect(mostrou('Alertas abertos: 1'), isTrue);
     });
@@ -127,60 +135,57 @@ void main() {
       // 0 = voltar dos alertas · 0 = voltar do detalhe
       await TelaDetalheIdoso(
         idosoId: 3,
-        idosoService: IdosoService(api),
-        alertaService: AlertaService(api),
+        idosoService: idosos,
+        alertaService: alertas,
         entrada: entradaFalsa(['2', '1', '1', 's', '', '0', '0'], saida),
       ).exibir();
 
-      expect(mostrou('2) Ver alertas (2 abertos)'), isTrue);
-      expect(mostrou('ALERTAS DE DONA LURDES'), isTrue);
-      expect(mostrou('Alertas abertos: 2 → 1'), isTrue);
       expect(mostrou('2) Ver alertas (1 aberto)'), isTrue);
+      expect(mostrou('ALERTAS DE DONA LURDES'), isTrue);
+      expect(mostrou('Alertas abertos: 1 → 0'), isTrue);
+      expect(mostrou('2) Ver alertas (nenhum aberto)'), isTrue);
     });
 
     test('pelo menu principal', () async {
-      final sessao = await AuthService(api).login('ana@email.com', '123456');
-
       await TelaMenuPrincipal(
         sessao: sessao,
-        idosoService: IdosoService(api),
-        alertaService: AlertaService(api),
+        idosoService: idosos,
+        alertaService: alertas,
         entrada: entradaFalsa(['2', '0', '0'], saida),
       ).exibir();
 
-      expect(mostrou('2) Alertas (3 abertos)'), isTrue);
+      expect(mostrou('2) Alertas (2 abertos)'), isTrue);
       expect(mostrou('Filtro: Abertos'), isTrue);
     });
   });
 
-  group('Regras da API falsa', () {
-    test('confirmar duas vezes dá erro', () async {
-      final servico = AlertaService(api);
-      await servico.confirmar(3);
+  group('Regras da API', () {
+    test('MEMBER não confirma alerta de idoso que não acompanha', () async {
+      final carlos = await AuthService(
+        api,
+      ).login('carlos@email.com', 'Senha12345');
+      final servico = AlertaService(api, IdosoService(api, carlos));
+      final daMaria = Alerta(
+        id: 1,
+        idosoId: 1,
+        tipo: 'TEMPERATURA_ALTA',
+        nivel: NivelAlerta.atencao,
+        status: StatusAlerta.aberto,
+        criadoEm: DateTime.now(),
+      );
 
       await expectLater(
-        servico.confirmar(3),
-        throwsA(isA<ApiException>().having(
-            (e) => e.mensagem, 'mensagem', 'Este alerta já foi confirmado.')),
+        servico.confirmar(daMaria),
+        throwsA(isA<NaoAutorizadoException>()),
       );
     });
 
-    test('não dá para confirmar alerta de outra família', () async {
-      await expectLater(
-        AlertaService(api).confirmar(5),
-        throwsA(isA<ApiException>()
-            .having((e) => e.mensagem, 'mensagem', 'Alerta não encontrado.')),
-      );
-    });
+    test('ADMIN lista todos os alertas pela rota geral', () async {
+      final admin = await AuthService(api).login('admin@tobem.com', 'Admin@12345');
+      final todos = await AlertaService(api, IdosoService(api, admin)).listar();
 
-    test('filtros enviados para a API', () async {
-      final resolvidos =
-          await AlertaService(api).listar(status: StatusAlerta.resolvido);
-      expect(resolvidos.map((alerta) => alerta.idosoNome), ['Dona Maria']);
-
-      final criticos =
-          await AlertaService(api).listar(nivel: NivelAlerta.critico);
-      expect(criticos.single.tipo, 'PESSOA_PARADA');
+      expect(todos, hasLength(3));
+      expect(javaFalsa.rotasChamadas, contains('GET /api/alertas'));
     });
   });
 }

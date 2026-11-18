@@ -108,12 +108,29 @@ void main() {
     });
 
     test('textos de escalonamento e contagem', () {
-      expect(textoEscalonamento(1), 'familiar avisado');
+      expect(textoEscalonamento(1), '1º contato avisado');
       expect(textoEscalonamento(2), '2º contato avisado');
-      expect(textoEscalonamento(3), 'cuidador/agente de saúde avisado');
+      expect(textoEscalonamento(3), '3º contato avisado');
       expect(textoAbertos(0), 'nenhum aberto');
       expect(textoAbertos(1), '1 aberto');
       expect(textoAbertos(4), '4 abertos');
+    });
+
+    test('tipos usados pelo simulador e pelo firmware', () {
+      Alerta doTipo(String tipo) => Alerta(
+        id: 1,
+        idosoId: 1,
+        tipo: tipo,
+        nivel: NivelAlerta.critico,
+        status: StatusAlerta.aberto,
+        criadoEm: DateTime(2026, 11, 7),
+      );
+      expect(tituloDoAlerta(doTipo('QUEDA')), 'Possível queda');
+      expect(tituloDoAlerta(doTipo('ALERTA_QUEDA_N2')), 'Possível queda');
+      expect(
+        tituloDoAlerta(doTipo('TEMPERATURA_ALTA')),
+        'Calor perigoso dentro de casa',
+      );
     });
 
     test('tipo desconhecido aparece com o próprio nome', () {
@@ -122,5 +139,11 @@ void main() {
         'X',
       );
     });
+  });
+
+  test('dias da semana da rotina', () {
+    expect(rotuloDiaSemana('TERCA'), 'Terça-feira');
+    expect(rotuloDiaSemana('TODOS'), 'Todos os dias');
+    expect(rotuloDiaSemana('FERIADO'), 'FERIADO');
   });
 }
